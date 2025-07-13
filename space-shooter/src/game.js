@@ -65,6 +65,7 @@ class SpaceShooter {
         this.particles = [];
         this.bulletHellBullets = [];
         this.powerups = [];
+        this.swarmEnemies = []; // For final boss swarm attacks
         
         // Timing
         this.lastTime = 0;
@@ -421,6 +422,31 @@ class SpaceShooter {
                     }
                 });
                 this.currentBoss.fireTimer = 0;
+
+                // Final Boss specific abilities
+                if (this.currentBoss.type === 'final-boss') {
+                    // Autoturret firing
+                    const turretPositions = this.currentBoss.getTurretFirePositions();
+                    turretPositions.forEach(pos => {
+                        const speed = 3.5;
+                        this.enemyBullets.push(new EnemyBullet(
+                            pos.x, pos.y,
+                            Math.cos(pos.rotation) * speed,
+                            Math.sin(pos.rotation) * speed
+                        ));
+                    });
+                    
+                    // Swarm spawning
+                    if (this.currentBoss.shouldSpawnSwarm()) {
+                        for (let i = 0; i < this.currentBoss.swarmSize; i++) {
+                            const angle = (i / this.currentBoss.swarmSize) * Math.PI * 2;
+                            const spawnX = this.currentBoss.x + Math.cos(angle) * (this.currentBoss.radius + 50);
+                            const spawnY = this.currentBoss.y + Math.sin(angle) * (this.currentBoss.radius + 50);
+                            
+                            this.swarmEnemies.push(new SwarmEnemy(spawnX, spawnY, this.player.x, this.player.y));
+                        }
+                    }
+                }
             }
             } catch (e) {
                 console.error('Boss update error:', e);
@@ -562,6 +588,13 @@ class SpaceShooter {
         
         // Update particles
         this.particles = this.particles.filter(particle => {
+
+        // Update swarm enemies
+        this.swarmEnemies = this.swarmEnemies.filter(swarm => {
+            swarm.update(deltaTime, this.player);
+            // Remove if off screen
+            return swarm.x > -50 && swarm.x < this.width + 50 && swarm.y > -50 && swarm.y < this.height + 50;
+        });
             particle.update(deltaTime);
             return particle.life > 0;
         });
@@ -645,13 +678,24 @@ class SpaceShooter {
                     if (this.currentBoss.health <= 0) {
                         this.createExplosion(this.currentBoss.x, this.currentBoss.y);
                         this.playSound('explosion');
-                        this.score += 1000 + (this.level * 500); // Big score bonus
-                        this.currentBoss = null;
-                        this.bossActive = false;
-                        
-                        // Epic music transition back to background
-                        this.sounds.background.loop = true;
-                        this.crossfade(this.sounds.bossbattle, this.sounds.background, 2000);
+                        // Check if this is phase 1 boss - transform to final boss
+                        if (this.currentBoss.phase === 1) {
+                            // Phase 1 defeated - spawn Final Boss (Phase 2)
+                            this.score += 500 + (this.level * 250);
+                            const bossX = this.currentBoss.x;
+                            const bossY = this.currentBoss.y;
+                            this.currentBoss = new FinalBoss(bossX, bossY, this.level);
+                        } else {
+                            // Final boss defeated
+                            this.score += 2000 + (this.level * 1000);
+                            this.currentBoss = null;
+                            this.bossActive = false;
+                            this.swarmEnemies = [];
+                            
+                            // Epic music transition back to background
+                            this.sounds.background.loop = true;
+                            this.crossfade(this.sounds.bossbattle, this.sounds.background, 1000);
+                        }
                         
                         // Spawn multiple powerups as reward
                         for (let k = 0; k < 3; k++) {
@@ -700,12 +744,43 @@ class SpaceShooter {
                 }
             }
         }
+
+        // Bullet vs Swarm Enemy collisions
+        for (let i = this.bullets.length - 1; i >= 0; i--) {
+            for (let j = this.swarmEnemies.length - 1; j >= 0; j--) {
+                if (this.bullets[i] && this.swarmEnemies[j] && 
+                    this.isColliding(this.bullets[i], this.swarmEnemies[j])) {
+                    
+                    this.createExplosion(this.swarmEnemies[j].x, this.swarmEnemies[j].y);
+                    this.playSound('enemyHit');
+                    this.score += 50; // Small score for swarm enemies
+                    this.swarmEnemies.splice(j, 1);
+                    this.bullets.splice(i, 1);
+                    break;
+                }
+            }
+        }
         
         // Player vs Enemy collisions
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             if (this.isColliding(this.player, this.enemies[i])) {
                 this.createExplosion(this.player.x, this.player.y);
                 this.enemies.splice(i, 1);
+                if (this.playerShield > 0) {
+                    this.playerShield--;
+                    this.playSound('powerup'); // Shield hit sound
+                } else {
+                    this.playSound('explosion');
+                    this.lives--;
+                }
+            }
+        }
+
+        // Player vs Swarm Enemy collisions
+        for (let i = this.swarmEnemies.length - 1; i >= 0; i--) {
+            if (this.isColliding(this.player, this.swarmEnemies[i])) {
+                this.createExplosion(this.player.x, this.player.y);
+                this.swarmEnemies.splice(i, 1);
                 if (this.playerShield > 0) {
                     this.playerShield--;
                     this.playSound('powerup'); // Shield hit sound
@@ -930,6 +1005,9 @@ class SpaceShooter {
             this.ctx.fill();
         });
         this.enemies.forEach(enemy => enemy.render(this.ctx));
+
+        // Draw swarm enemies
+        this.swarmEnemies.forEach(swarm => swarm.render(this.ctx));
         
         // Draw boss
         if (this.bossActive && this.currentBoss) {
@@ -1409,6 +1487,7 @@ class Boss {
         this.cannonRotation = 0;
         this.cannons = Math.min(6, 2 + Math.floor(level / 3)); // More cannons per level
         this.type = 'mega-juggernaut';
+        this.phase = 1; // Phase 1 boss
     }
     
     update(deltaTime, player) {
@@ -1502,6 +1581,580 @@ class Boss {
             });
         }
         return positions;
+    }
+}
+
+// Final Boss class - Phase 2 with autoturrets and swarm spawning
+class FinalBoss {
+    constructor(x, y, level) {
+        this.x = x;
+        this.y = y;
+        this.level = level;
+        this.radius = 100 + (level * 8); // Bigger than regular boss
+        this.speed = 1.2 + (level * 0.15); // Slightly slower but more dangerous
+        this.direction = 1;
+        this.health = 200 + (level * 80); // Much more health
+        this.maxHealth = this.health;
+        this.fireTimer = 0;
+        this.fireRate = 100 - (level * 8); // Very fast firing
+        this.rotation = 0;
+        this.cannonRotation = 0;
+        this.cannons = Math.min(8, 4 + Math.floor(level / 2)); // More cannons
+        this.type = 'final-boss';
+        this.phase = 2; // Phase 2 boss
+        
+        // Autoturret system
+        this.autoturrets = [];
+        this.turretCount = Math.min(4, 2 + Math.floor(level / 3));
+        this.turretFireTimer = 0;
+        this.turretFireRate = 80; // Fast turret firing
+        
+        // Swarm spawning
+        this.swarmTimer = 0;
+        this.swarmRate = 3000 - (level * 200); // Spawn swarms every 3 seconds (faster per level)
+        this.swarmSize = 3 + Math.floor(level / 2); // More swarm enemies per level
+        
+        this.initAutoturrets();
+    }
+    
+    initAutoturrets() {
+        this.autoturrets = [];
+        for (let i = 0; i < this.turretCount; i++) {
+            const angle = (i / this.turretCount) * Math.PI * 2;
+            this.autoturrets.push({
+                angle: angle,
+                rotation: 0,
+                fireTimer: Math.random() * this.turretFireRate // Stagger firing
+            });
+        }
+    }
+    
+    update(deltaTime, player) {
+        // Safety check for deltaTime
+        if (!deltaTime || deltaTime <= 0 || isNaN(deltaTime)) {
+            deltaTime = 16; // Default to 60fps
+        }
+        
+        // Movement (similar to regular boss but more erratic)
+        this.x += this.speed * this.direction * (deltaTime / 16);
+        
+        // Bounce off walls
+        if (this.x <= this.radius || this.x >= 800 - this.radius) {
+            this.direction *= -1;
+        }
+        
+        // Rotate cannons and turrets continuously
+        this.cannonRotation += (0.08 + this.level * 0.015) * (deltaTime / 16);
+        
+        // Update autoturrets
+        this.autoturrets.forEach(turret => {
+            // Aim turrets at player
+            const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+            const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+            const dx = player.x - turretX;
+            const dy = player.y - turretY;
+            turret.rotation = Math.atan2(dy, dx);
+            
+            turret.fireTimer += deltaTime;
+        });
+        
+        // Keep boss on screen
+        this.x = Math.max(this.radius, Math.min(800 - this.radius, this.x));
+        
+        // Update timers
+        this.fireTimer += deltaTime;
+        this.turretFireTimer += deltaTime;
+        this.swarmTimer += deltaTime;
+    }
+    
+    getFirePositions() {
+        const positions = [];
+        
+        // Main cannons (like regular boss)
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i / this.cannons) * Math.PI * 2 + this.cannonRotation;
+            positions.push({
+                x: this.x + Math.cos(angle) * this.radius * 0.9,
+                y: this.y + Math.sin(angle) * this.radius * 0.9
+            });
+        }
+        
+        return positions;
+    }
+    
+    getTurretFirePositions() {
+        const positions = [];
+        
+        this.autoturrets.forEach(turret => {
+            if (turret.fireTimer >= this.turretFireRate) {
+                const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+                const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+                
+                positions.push({
+                    x: turretX,
+                    y: turretY,
+                    rotation: turret.rotation
+                });
+                
+                turret.fireTimer = 0;
+            }
+        });
+        
+        return positions;
+    }
+    
+    shouldSpawnSwarm() {
+
+    render(ctx) {
+        // Main boss body (larger and more menacing)
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner core
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Autoturrets
+        ctx.fillStyle = '#800000';
+        this.autoturrets.forEach(turret => {
+            const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+            const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+            
+            ctx.save();
+            ctx.translate(turretX, turretY);
+            ctx.rotate(turret.rotation);
+            
+            // Turret body
+            ctx.fillRect(-8, -6, 16, 12);
+            
+            // Turret barrel
+            ctx.fillStyle = '#400000';
+            ctx.fillRect(8, -3, 15, 6);
+            
+            ctx.restore();
+        });
+        
+        // Main cannons
+        ctx.fillStyle = '#660000';
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i / this.cannons) * Math.PI * 2 + this.cannonRotation;
+            const cannonX = this.x + Math.cos(angle) * this.radius * 0.9;
+            const cannonY = this.y + Math.sin(angle) * this.radius * 0.9;
+            
+            ctx.save();
+            ctx.translate(cannonX, cannonY);
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -3, 20, 6);
+            ctx.restore();
+        }
+        
+        // Health bar
+        const barWidth = this.radius * 2;
+        const barHeight = 8;
+        const barX = this.x - barWidth / 2;
+        const barY = this.y - this.radius - 20;
+        
+        // Background
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = healthPercent > 0.5 ? '#ff0000' : '#ff6600';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Phase indicator
+        ctx.fillStyle = '#ffff00';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINAL FORM', this.x, barY - 10);
+    }
+        if (this.swarmTimer >= this.swarmRate) {
+
+    render(ctx) {
+        // Main boss body (larger and more menacing)
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner core
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Autoturrets
+        ctx.fillStyle = '#800000';
+        this.autoturrets.forEach(turret => {
+            const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+            const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+            
+            ctx.save();
+            ctx.translate(turretX, turretY);
+            ctx.rotate(turret.rotation);
+            
+            // Turret body
+            ctx.fillRect(-8, -6, 16, 12);
+            
+            // Turret barrel
+            ctx.fillStyle = '#400000';
+            ctx.fillRect(8, -3, 15, 6);
+            
+            ctx.restore();
+        });
+        
+        // Main cannons
+        ctx.fillStyle = '#660000';
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i / this.cannons) * Math.PI * 2 + this.cannonRotation;
+            const cannonX = this.x + Math.cos(angle) * this.radius * 0.9;
+            const cannonY = this.y + Math.sin(angle) * this.radius * 0.9;
+            
+            ctx.save();
+            ctx.translate(cannonX, cannonY);
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -3, 20, 6);
+            ctx.restore();
+        }
+        
+        // Health bar
+        const barWidth = this.radius * 2;
+        const barHeight = 8;
+        const barX = this.x - barWidth / 2;
+        const barY = this.y - this.radius - 20;
+        
+        // Background
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = healthPercent > 0.5 ? '#ff0000' : '#ff6600';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Phase indicator
+        ctx.fillStyle = '#ffff00';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINAL FORM', this.x, barY - 10);
+    }
+            this.swarmTimer = 0;
+
+    render(ctx) {
+        // Main boss body (larger and more menacing)
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner core
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Autoturrets
+        ctx.fillStyle = '#800000';
+        this.autoturrets.forEach(turret => {
+            const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+            const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+            
+            ctx.save();
+            ctx.translate(turretX, turretY);
+            ctx.rotate(turret.rotation);
+            
+            // Turret body
+            ctx.fillRect(-8, -6, 16, 12);
+            
+            // Turret barrel
+            ctx.fillStyle = '#400000';
+            ctx.fillRect(8, -3, 15, 6);
+            
+            ctx.restore();
+        });
+        
+        // Main cannons
+        ctx.fillStyle = '#660000';
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i / this.cannons) * Math.PI * 2 + this.cannonRotation;
+            const cannonX = this.x + Math.cos(angle) * this.radius * 0.9;
+            const cannonY = this.y + Math.sin(angle) * this.radius * 0.9;
+            
+            ctx.save();
+            ctx.translate(cannonX, cannonY);
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -3, 20, 6);
+            ctx.restore();
+        }
+        
+        // Health bar
+        const barWidth = this.radius * 2;
+        const barHeight = 8;
+        const barX = this.x - barWidth / 2;
+        const barY = this.y - this.radius - 20;
+        
+        // Background
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = healthPercent > 0.5 ? '#ff0000' : '#ff6600';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Phase indicator
+        ctx.fillStyle = '#ffff00';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINAL FORM', this.x, barY - 10);
+    }
+            return true;
+
+    render(ctx) {
+        // Main boss body (larger and more menacing)
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner core
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Autoturrets
+        ctx.fillStyle = '#800000';
+        this.autoturrets.forEach(turret => {
+            const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+            const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+            
+            ctx.save();
+            ctx.translate(turretX, turretY);
+            ctx.rotate(turret.rotation);
+            
+            // Turret body
+            ctx.fillRect(-8, -6, 16, 12);
+            
+            // Turret barrel
+            ctx.fillStyle = '#400000';
+            ctx.fillRect(8, -3, 15, 6);
+            
+            ctx.restore();
+        });
+        
+        // Main cannons
+        ctx.fillStyle = '#660000';
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i / this.cannons) * Math.PI * 2 + this.cannonRotation;
+            const cannonX = this.x + Math.cos(angle) * this.radius * 0.9;
+            const cannonY = this.y + Math.sin(angle) * this.radius * 0.9;
+            
+            ctx.save();
+            ctx.translate(cannonX, cannonY);
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -3, 20, 6);
+            ctx.restore();
+        }
+        
+        // Health bar
+        const barWidth = this.radius * 2;
+        const barHeight = 8;
+        const barX = this.x - barWidth / 2;
+        const barY = this.y - this.radius - 20;
+        
+        // Background
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = healthPercent > 0.5 ? '#ff0000' : '#ff6600';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Phase indicator
+        ctx.fillStyle = '#ffff00';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINAL FORM', this.x, barY - 10);
+    }
+        }
+
+    render(ctx) {
+        // Main boss body (larger and more menacing)
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner core
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Autoturrets
+        ctx.fillStyle = '#800000';
+        this.autoturrets.forEach(turret => {
+            const turretX = this.x + Math.cos(turret.angle) * this.radius * 0.7;
+            const turretY = this.y + Math.sin(turret.angle) * this.radius * 0.7;
+            
+            ctx.save();
+            ctx.translate(turretX, turretY);
+            ctx.rotate(turret.rotation);
+            
+            // Turret body
+            ctx.fillRect(-8, -6, 16, 12);
+            
+            // Turret barrel
+            ctx.fillStyle = '#400000';
+            ctx.fillRect(8, -3, 15, 6);
+            
+            ctx.restore();
+        });
+        
+        // Main cannons
+        ctx.fillStyle = '#660000';
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i / this.cannons) * Math.PI * 2 + this.cannonRotation;
+            const cannonX = this.x + Math.cos(angle) * this.radius * 0.9;
+            const cannonY = this.y + Math.sin(angle) * this.radius * 0.9;
+            
+            ctx.save();
+            ctx.translate(cannonX, cannonY);
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -3, 20, 6);
+            ctx.restore();
+        }
+        
+        // Health bar
+        const barWidth = this.radius * 2;
+        const barHeight = 8;
+        const barX = this.x - barWidth / 2;
+        const barY = this.y - this.radius - 20;
+        
+        // Background
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = healthPercent > 0.5 ? '#ff0000' : '#ff6600';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Phase indicator
+        ctx.fillStyle = '#ffff00';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINAL FORM', this.x, barY - 10);
+    }
+        return false;
+    }
+}
+
+// Swarm Enemy class - small, fast enemies that target player
+class SwarmEnemy {
+    constructor(x, y, targetX, targetY) {
+        this.x = x;
+        this.y = y;
+        this.radius = 8;
+        this.speed = 2.5;
+        this.health = 1; // Dies in one hit
+        this.type = 'swarm';
+        
+        // Calculate direction to target
+        const dx = targetX - x;
+        const dy = targetY - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > 0) {
+            this.vx = (dx / distance) * this.speed;
+            this.vy = (dy / distance) * this.speed;
+        } else {
+            this.vx = 0;
+            this.vy = this.speed;
+        }
+        
+        this.rotation = Math.atan2(this.vy, this.vx);
+    }
+    
+    update(deltaTime, player) {
+        // Safety check for deltaTime
+        if (!deltaTime || deltaTime <= 0 || isNaN(deltaTime)) {
+            deltaTime = 16;
+        }
+        
+        // Update position
+        this.x += this.vx * (deltaTime / 16);
+        this.y += this.vy * (deltaTime / 16);
+        
+        // Continuously adjust direction toward player (homing behavior)
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > 0) {
+            const targetVx = (dx / distance) * this.speed;
+            const targetVy = (dy / distance) * this.speed;
+            
+            // Gradually adjust velocity (not instant turning)
+            this.vx += (targetVx - this.vx) * 0.02 * (deltaTime / 16);
+            this.vy += (targetVy - this.vy) * 0.02 * (deltaTime / 16);
+            
+            this.rotation = Math.atan2(this.vy, this.vx);
+        }
+    }
+    
+    render(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        
+        // Small triangular enemy
+        ctx.fillStyle = '#ff6600';
+        ctx.beginPath();
+        ctx.moveTo(8, 0);
+        ctx.lineTo(-6, -4);
+        ctx.lineTo(-6, 4);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Glow effect
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        ctx.restore();
     }
 }
 
