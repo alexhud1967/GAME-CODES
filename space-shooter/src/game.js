@@ -161,8 +161,23 @@ class SpaceShooter {
     }
     
     crossfade(fromAudio, toAudio, duration = 2000) {
-        this.fadeOut(fromAudio, duration);
-        this.fadeIn(toAudio, null, duration);
+        console.log('Starting crossfade...');
+        try {
+            if (fromAudio && fromAudio.readyState >= 2) {
+                this.fadeOut(fromAudio, duration);
+            }
+            if (toAudio && toAudio.readyState >= 2) {
+                this.fadeIn(toAudio, null, duration);
+            } else {
+                console.log('Boss music not ready, playing immediately');
+                if (toAudio) {
+                    toAudio.volume = this.musicVolume * this.masterVolume;
+                    toAudio.play().catch(e => console.log('Boss music play failed:', e));
+                }
+            }
+        } catch (e) {
+            console.error('Crossfade error:', e);
+        }
     }
     
     setupVolumeControls() {
@@ -251,10 +266,9 @@ class SpaceShooter {
         const rand = Math.random();
         let type;
         
-        if (rand < 0.3) type = 'zigzag';
-        else if (rand < 0.5) type = 'straight';
-        else if (rand < 0.7) type = 'fast';
-        else if (rand < 0.85) type = 'heavy';
+        if (rand < 0.4) type = 'zigzag';
+        else if (rand < 0.6) type = 'straight';
+        else if (rand < 0.8) type = 'fast';
         else type = 'spiral';
         
         this.enemies.push(new Enemy(x, -30, type));
@@ -378,23 +392,31 @@ class SpaceShooter {
         
         // Boss logic
         if (this.bossActive && this.currentBoss) {
-            this.currentBoss.update(deltaTime, this.player);
-            
-            // Boss firing
-            if (this.currentBoss.fireTimer > this.currentBoss.fireRate) {
+            try {
+                this.currentBoss.update(deltaTime, this.player);
+                
+                // Boss firing
+                if (this.currentBoss.fireTimer > this.currentBoss.fireRate) {
                 const firePositions = this.currentBoss.getFirePositions();
                 firePositions.forEach(pos => {
                     const dx = this.player.x - pos.x;
                     const dy = this.player.y - pos.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-                    const speed = 3;
-                    this.enemyBullets.push(new EnemyBullet(
-                        pos.x, pos.y,
-                        (dx / distance) * speed,
-                        (dy / distance) * speed
-                    ));
+                    
+                    // Safety check to prevent division by zero
+                    if (distance > 0) {
+                        const speed = 3;
+                        this.enemyBullets.push(new EnemyBullet(
+                            pos.x, pos.y,
+                            (dx / distance) * speed,
+                            (dy / distance) * speed
+                        ));
+                    }
                 });
                 this.currentBoss.fireTimer = 0;
+            }
+            } catch (e) {
+                console.error('Boss update error:', e);
             }
         } else {
             // Regular enemy spawning (only when no boss)
@@ -1103,10 +1125,7 @@ class Enemy {
             this.radius = 8;
             this.speed = 4;
             this.health = 1;
-        } else if (type === 'heavy') {
-            this.radius = 18;
-            this.speed = 1;
-            this.health = 3;
+
         } else if (type === 'spiral') {
             this.radius = 10;
             this.speed = 2;
@@ -1142,9 +1161,6 @@ class Enemy {
                 return 'destroyed';
             }
             return 'core_hit';
-        } else if (this.type === 'heavy') {
-            this.health--;
-            return this.health <= 0 ? 'destroyed' : 'hit';
         } else {
             return 'destroyed';
         }
@@ -1186,10 +1202,7 @@ class Enemy {
             this.y += this.speed * (deltaTime / 16);
             // Fast enemies move in slight curves
             this.x += Math.sin(this.y * 0.01) * 0.5;
-        } else if (this.type === 'heavy') {
-            this.y += this.speed * (deltaTime / 16);
-            // Heavy enemies move straight but wobble slightly
-            this.x += Math.sin(Date.now() * 0.002) * 0.3;
+
         } else {
             // Straight movement
             this.y += this.speed * (deltaTime / 16);
@@ -1275,24 +1288,7 @@ class Enemy {
             ctx.lineTo(4, 15);
             ctx.closePath();
             ctx.fill();
-        } else if (this.type === 'heavy') {
-            // Heavy enemy - large and armored
-            ctx.fillStyle = '#ff8800';
-            ctx.fillRect(-12, -10, 24, 20);
-            ctx.strokeStyle = '#ffaa44';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(-12, -10, 24, 20);
-            
-            // Armor plating
-            ctx.fillStyle = '#ffaa44';
-            ctx.fillRect(-8, -6, 16, 3);
-            ctx.fillRect(-8, 0, 16, 3);
-            ctx.fillRect(-8, 6, 16, 3);
-            
-            // Health indicator
-            const healthPercent = this.health / 3;
-            ctx.fillStyle = healthPercent > 0.66 ? '#00ff00' : healthPercent > 0.33 ? '#ffff00' : '#ff0000';
-            ctx.fillRect(-10, -15, 20 * healthPercent, 2);
+
         } else if (this.type === 'spiral') {
             // Spiral enemy - spinning design
             ctx.rotate(this.spiralAngle);
