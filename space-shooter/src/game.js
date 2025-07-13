@@ -25,7 +25,7 @@ class SpaceShooter {
         
         // Audio system
         this.sounds = {
-            background: new Audio('assets/sounds/background.wav'),
+            background: new Audio('assets/sounds/background.mp3'),
             bossbattle: new Audio('assets/sounds/bossbattle.m4a'),
             enemyHit: new Audio('assets/sounds/enemy-hit.wav'),
             explosion: new Audio('assets/sounds/explosion.wav'),
