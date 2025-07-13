@@ -10,6 +10,13 @@ class SpaceShooter {
         this.score = 0;
         this.lives = 3;
         this.gameRunning = true;
+        this.level = 1;
+        this.levelScore = 0; // Score needed for next level
+        this.nextLevelThreshold = 5000; // Points needed for level 2
+        
+        // Player upgrades
+        this.playerCannons = 1; // Number of cannons (1-3)
+        this.playerShield = 0; // Shield strength (0-3)
         
         // Audio system
         this.sounds = {
@@ -45,6 +52,7 @@ class SpaceShooter {
         this.stars = [];
         this.particles = [];
         this.bulletHellBullets = [];
+        this.powerups = [];
         
         // Timing
         this.lastTime = 0;
@@ -57,6 +65,7 @@ class SpaceShooter {
         this.bulletHellDuration = 0;
         this.shockwaveActive = false;
         this.shockwaves = [];
+        this.powerupSpawnTimer = 0;
         
         // Initialize
         this.initStarfield();
@@ -142,7 +151,30 @@ class SpaceShooter {
     
     spawnJuggernaut() {
         const x = Math.random() * (this.width - 80);
-        this.enemies.push(new Enemy(x, -60, 'juggernaut'));
+        this.enemies.push(new Enemy(x, -60, 'juggernaut', this.level));
+    }
+    
+    spawnPowerup() {
+        const x = Math.random() * (this.width - 40);
+        const types = ['life', 'cannon', 'shield'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        this.powerups.push(new Powerup(x, -30, type));
+    }
+    
+    checkLevelUp() {
+        if (this.score >= this.nextLevelThreshold) {
+            this.level++;
+            this.nextLevelThreshold += 5000 * this.level; // Exponential scaling
+            
+            // Level up effects
+            this.createExplosion(this.width / 2, this.height / 2);
+            this.playSound('powerup');
+            
+            // Show level up message briefly
+            setTimeout(() => {
+                // Level up message could be displayed here
+            }, 100);
+        }
     }
     
     activateBulletHell() {
@@ -217,25 +249,43 @@ class SpaceShooter {
         // Update player (for flame animation)
         this.player.update(deltaTime);
         
-        // Auto-fire (no sound)
+        // Auto-fire (no sound) - Multi-cannon support
         this.fireTimer += deltaTime;
         if (this.fireTimer > 150) { // Fire every 150ms
-            this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
+            if (this.playerCannons === 1) {
+                this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
+            } else if (this.playerCannons === 2) {
+                this.bullets.push(new Bullet(this.player.x - 10, this.player.y - 20, -8));
+                this.bullets.push(new Bullet(this.player.x + 10, this.player.y - 20, -8));
+            } else if (this.playerCannons === 3) {
+                this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
+                this.bullets.push(new Bullet(this.player.x - 15, this.player.y - 15, -8));
+                this.bullets.push(new Bullet(this.player.x + 15, this.player.y - 15, -8));
+            }
             this.fireTimer = 0;
         }
         
-        // Spawn enemies
+        // Spawn enemies (level-based difficulty)
         this.enemySpawnTimer += deltaTime;
-        if (this.enemySpawnTimer > 1000) { // Spawn every 1 second
+        const spawnRate = Math.max(500, 1000 - (this.level * 100)); // Faster spawning per level
+        if (this.enemySpawnTimer > spawnRate) {
             this.spawnEnemy();
             this.enemySpawnTimer = 0;
         }
         
-        // Spawn juggernaut occasionally
+        // Spawn juggernaut occasionally (more frequent at higher levels)
         this.juggernauthSpawnTimer += deltaTime;
-        if (this.juggernauthSpawnTimer > 15000) { // Spawn every 15 seconds
+        const juggernauthRate = Math.max(8000, 15000 - (this.level * 1000)); // More frequent per level
+        if (this.juggernauthSpawnTimer > juggernauthRate) {
             this.spawnJuggernaut();
             this.juggernauthSpawnTimer = 0;
+        }
+        
+        // Powerup spawning
+        this.powerupSpawnTimer += deltaTime;
+        if (this.powerupSpawnTimer > 15000) { // Spawn every 15 seconds
+            this.spawnPowerup();
+            this.powerupSpawnTimer = 0;
         }
         
         // Enemy firing
@@ -354,12 +404,64 @@ class SpaceShooter {
             return particle.life > 0;
         });
         
+        // Update powerups
+        this.powerups = this.powerups.filter(powerup => {
+            powerup.update(deltaTime);
+            return powerup.y < this.height + 50;
+        });
+        
+        // Check for level progression
+        this.checkLevelUp();
+        
         // Collision detection
         this.checkCollisions();
         
         // Update UI
         document.getElementById('score').textContent = this.score;
         document.getElementById('lives').textContent = this.lives;
+        
+        // Update level and upgrade displays (create if they don't exist)
+        let levelDisplay = document.getElementById('level');
+        if (!levelDisplay) {
+            levelDisplay = document.createElement('div');
+            levelDisplay.id = 'level';
+            levelDisplay.style.position = 'absolute';
+            levelDisplay.style.top = '80px';
+            levelDisplay.style.left = '10px';
+            levelDisplay.style.color = 'white';
+            levelDisplay.style.fontFamily = 'monospace';
+            levelDisplay.style.fontSize = '18px';
+            document.body.appendChild(levelDisplay);
+        }
+        levelDisplay.textContent = `Level: ${this.level}`;
+        
+        let cannonDisplay = document.getElementById('cannons');
+        if (!cannonDisplay) {
+            cannonDisplay = document.createElement('div');
+            cannonDisplay.id = 'cannons';
+            cannonDisplay.style.position = 'absolute';
+            cannonDisplay.style.top = '105px';
+            cannonDisplay.style.left = '10px';
+            cannonDisplay.style.color = 'white';
+            cannonDisplay.style.fontFamily = 'monospace';
+            cannonDisplay.style.fontSize = '18px';
+            document.body.appendChild(cannonDisplay);
+        }
+        cannonDisplay.textContent = `Cannons: ${this.playerCannons}`;
+        
+        let shieldDisplay = document.getElementById('shields');
+        if (!shieldDisplay) {
+            shieldDisplay = document.createElement('div');
+            shieldDisplay.id = 'shields';
+            shieldDisplay.style.position = 'absolute';
+            shieldDisplay.style.top = '130px';
+            shieldDisplay.style.left = '10px';
+            shieldDisplay.style.color = 'white';
+            shieldDisplay.style.fontFamily = 'monospace';
+            shieldDisplay.style.fontSize = '18px';
+            document.body.appendChild(shieldDisplay);
+        }
+        shieldDisplay.textContent = `Shield: ${this.playerShield}`;
         
         if (this.lives <= 0) {
             this.gameRunning = false;
@@ -407,9 +509,14 @@ class SpaceShooter {
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             if (this.isColliding(this.player, this.enemies[i])) {
                 this.createExplosion(this.player.x, this.player.y);
-                this.playSound('explosion');
                 this.enemies.splice(i, 1);
-                this.lives--;
+                if (this.playerShield > 0) {
+                    this.playerShield--;
+                    this.playSound('powerup'); // Shield hit sound
+                } else {
+                    this.playSound('explosion');
+                    this.lives--;
+                }
             }
         }
         
@@ -417,9 +524,14 @@ class SpaceShooter {
         for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
             if (this.isColliding(this.player, this.enemyBullets[i])) {
                 this.createExplosion(this.player.x, this.player.y);
-                this.playSound('explosion');
                 this.enemyBullets.splice(i, 1);
-                this.lives--;
+                if (this.playerShield > 0) {
+                    this.playerShield--;
+                    this.playSound('powerup'); // Shield hit sound
+                } else {
+                    this.playSound('explosion');
+                    this.lives--;
+                }
             }
         }
         
@@ -439,15 +551,41 @@ class SpaceShooter {
                 if (shockwave.active) {
                     shockwave.bullets.forEach(bullet => {
                         if (bullet.active && this.isColliding(this.player, bullet)) {
-                            this.createExplosion(this.player.x, this.player.y);
-                            this.playSound('explosion');
-                            bullet.active = false; // Remove the bullet that hit
-                            this.lives--;
+                            if (this.playerShield > 0) {
+                                this.playerShield--;
+                                bullet.active = false;
+                                this.playSound('powerup'); // Shield hit sound
+                            } else {
+                                this.createExplosion(this.player.x, this.player.y);
+                                this.playSound('explosion');
+                                bullet.active = false;
+                                this.lives--;
+                            }
                         }
                     });
                 }
             });
         }
+        
+        // Player vs Powerup collisions (contact)
+        this.powerups = this.powerups.filter(powerup => {
+            if (this.isColliding(this.player, powerup)) {
+                this.collectPowerup(powerup);
+                return false;
+            }
+            return true;
+        });
+        
+        // Bullet vs Powerup collisions (shooting)
+        this.bullets.forEach(bullet => {
+            this.powerups = this.powerups.filter(powerup => {
+                if (this.isColliding(bullet, powerup)) {
+                    this.collectPowerup(powerup);
+                    return false;
+                }
+                return true;
+            });
+        });
     }
     
     isColliding(obj1, obj2) {
@@ -455,6 +593,69 @@ class SpaceShooter {
         const dy = obj1.y - obj2.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         return distance < (obj1.radius + obj2.radius);
+    }
+    
+    collectPowerup(powerup) {
+        this.createExplosion(powerup.x, powerup.y);
+        this.playSound('powerup');
+        
+        switch(powerup.type) {
+            case 'life':
+                this.lives++;
+                break;
+            case 'cannon':
+                if (this.playerCannons < 3) {
+                    this.playerCannons++;
+                }
+                break;
+            case 'shield':
+                this.playerShield = Math.min(3, this.playerShield + 1);
+                break;
+        }
+    }
+    
+    spawnPowerup() {
+        const types = ['life', 'cannon', 'shield'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        const x = Math.random() * (this.width - 60) + 30;
+        this.powerups.push(new Powerup(x, -30, type));
+    }
+    
+    checkLevelUp() {
+        if (this.score >= this.nextLevelThreshold) {
+            this.level++;
+            this.nextLevelThreshold += 5000 + (this.level * 2000); // Increasing requirements
+            
+            // Level up effects
+            this.createExplosion(this.width / 2, this.height / 2);
+            this.playSound('powerup');
+            
+            // Show level up message briefly
+            setTimeout(() => {
+                let levelUpMsg = document.getElementById('levelUpMsg');
+                if (!levelUpMsg) {
+                    levelUpMsg = document.createElement('div');
+                    levelUpMsg.id = 'levelUpMsg';
+                    levelUpMsg.style.position = 'absolute';
+                    levelUpMsg.style.top = '50%';
+                    levelUpMsg.style.left = '50%';
+                    levelUpMsg.style.transform = 'translate(-50%, -50%)';
+                    levelUpMsg.style.color = 'yellow';
+                    levelUpMsg.style.fontFamily = 'monospace';
+                    levelUpMsg.style.fontSize = '24px';
+                    levelUpMsg.style.fontWeight = 'bold';
+                    levelUpMsg.style.textShadow = '2px 2px 4px rgba(0,0,0,0.8)';
+                    levelUpMsg.style.zIndex = '1000';
+                    document.body.appendChild(levelUpMsg);
+                }
+                levelUpMsg.textContent = `LEVEL ${this.level}!`;
+                levelUpMsg.style.display = 'block';
+                
+                setTimeout(() => {
+                    levelUpMsg.style.display = 'none';
+                }, 2000);
+            }, 100);
+        }
     }
     
     createExplosion(x, y) {
@@ -473,6 +674,29 @@ class SpaceShooter {
         
         // Draw game objects
         this.player.render(this.ctx);
+        
+        // Draw shield around player
+        if (this.playerShield > 0) {
+            this.ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 + this.playerShield * 0.2})`;
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.arc(this.player.x, this.player.y, this.player.radius + 15, 0, Math.PI * 2);
+            this.ctx.stroke();
+            
+            // Additional shield rings for multiple shields
+            if (this.playerShield > 1) {
+                this.ctx.strokeStyle = `rgba(0, 255, 255, ${0.2 + this.playerShield * 0.1})`;
+                this.ctx.beginPath();
+                this.ctx.arc(this.player.x, this.player.y, this.player.radius + 20, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
+            if (this.playerShield > 2) {
+                this.ctx.strokeStyle = `rgba(0, 255, 255, ${0.1 + this.playerShield * 0.1})`;
+                this.ctx.beginPath();
+                this.ctx.arc(this.player.x, this.player.y, this.player.radius + 25, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
+        }
         this.bullets.forEach(bullet => bullet.render(this.ctx));
         this.enemyBullets.forEach(bullet => {
             this.ctx.fillStyle = '#ff4444';
@@ -482,6 +706,11 @@ class SpaceShooter {
         });
         this.enemies.forEach(enemy => enemy.render(this.ctx));
         this.particles.forEach(particle => particle.render(this.ctx));
+        
+        // Draw powerups
+        this.powerups.forEach(powerup => {
+            powerup.render(this.ctx);
+        });
         
         // Draw bullet hell bullets
         this.bulletHellBullets.forEach(bullet => {
@@ -955,6 +1184,67 @@ class Particle {
         ctx.beginPath();
         ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
         ctx.fill();
+    }
+}
+
+// Powerup class
+class Powerup {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type; // 'life', 'cannon', 'shield'
+        this.radius = 15;
+        this.speed = 1;
+        this.rotation = 0;
+        this.rotationSpeed = 0.05;
+        this.pulsePhase = 0;
+    }
+    
+    update(deltaTime) {
+        this.y += this.speed * (deltaTime / 16);
+        this.rotation += this.rotationSpeed * (deltaTime / 16);
+        this.pulsePhase += 0.1 * (deltaTime / 16);
+    }
+    
+    render(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        
+        const pulse = 0.8 + 0.2 * Math.sin(this.pulsePhase);
+        const size = this.radius * pulse;
+        
+        // Draw powerup based on type
+        if (this.type === 'life') {
+            // Heart shape
+            ctx.fillStyle = '#ff4444';
+            ctx.beginPath();
+            ctx.arc(-size/3, -size/3, size/3, 0, Math.PI * 2);
+            ctx.arc(size/3, -size/3, size/3, 0, Math.PI * 2);
+            ctx.moveTo(-size/2, 0);
+            ctx.lineTo(0, size/2);
+            ctx.lineTo(size/2, 0);
+            ctx.fill();
+        } else if (this.type === 'cannon') {
+            // Triple cannon symbol
+            ctx.fillStyle = '#ffff44';
+            ctx.fillRect(-size/2, -size/4, size, size/8);
+            ctx.fillRect(-size/2, -size/8, size, size/8);
+            ctx.fillRect(-size/2, size/8, size, size/8);
+        } else if (this.type === 'shield') {
+            // Shield symbol
+            ctx.fillStyle = '#44ffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, size, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#44ffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.7, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
     }
 }
 
