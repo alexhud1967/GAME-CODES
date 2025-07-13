@@ -911,7 +911,8 @@ class SpaceShooter {
         const dx = obj1.x - obj2.x;
         const dy = obj1.y - obj2.y;
         const distanceSquared = dx * dx + dy * dy;
-        const radiusSum = obj1.radius + obj2.radius; return distanceSquared < (radiusSum * radiusSum);
+        const radiusSum = obj1.radius + obj2.radius;
+        return distanceSquared < (radiusSum * radiusSum);
     }
     
     collectPowerup(powerup) {
