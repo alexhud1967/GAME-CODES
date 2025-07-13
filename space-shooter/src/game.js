@@ -1331,6 +1331,11 @@ class Boss {
     }
     
     update(deltaTime, player) {
+        // Safety check for deltaTime
+        if (!deltaTime || deltaTime <= 0 || isNaN(deltaTime)) {
+            deltaTime = 16; // Default to 60fps
+        }
+        
         // Movement patterns based on boss type
         if (this.type === 'mothership') {
             // Slow horizontal movement with rotation
@@ -1398,8 +1403,12 @@ class Boss {
         } else if (this.type === 'twin-core') {
             // Twin cores with energy bridge
             ctx.fillStyle = '#ff4444';
+            // Left core
             ctx.beginPath();
             ctx.arc(-this.radius/3, 0, this.radius/3, 0, Math.PI * 2);
+            ctx.fill();
+            // Right core
+            ctx.beginPath();
             ctx.arc(this.radius/3, 0, this.radius/3, 0, Math.PI * 2);
             ctx.fill();
             
