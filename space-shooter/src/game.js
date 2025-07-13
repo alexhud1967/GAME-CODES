@@ -388,13 +388,19 @@ class SpaceShooter {
         this.fireTimer += deltaTime;
         if (this.fireTimer > 150) { // Fire every 150ms
             if (this.playerCannons === 1) {
+            if (this.bullets.length > 50) return; // Limit bullets for performance
                 this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
             } else if (this.playerCannons === 2) {
+            if (this.bullets.length > 50) return; // Limit bullets for performance
                 this.bullets.push(new Bullet(this.player.x - 10, this.player.y - 20, -8));
+            if (this.bullets.length > 50) return; // Limit bullets for performance
                 this.bullets.push(new Bullet(this.player.x + 10, this.player.y - 20, -8));
             } else if (this.playerCannons === 3) {
+            if (this.bullets.length > 50) return; // Limit bullets for performance
                 this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
+            if (this.bullets.length > 50) return; // Limit bullets for performance
                 this.bullets.push(new Bullet(this.player.x - 15, this.player.y - 15, -8));
+            if (this.bullets.length > 50) return; // Limit bullets for performance
                 this.bullets.push(new Bullet(this.player.x + 15, this.player.y - 15, -8));
             }
             this.fireTimer = 0;
@@ -411,15 +417,16 @@ class SpaceShooter {
                 firePositions.forEach(pos => {
                     const dx = this.player.x - pos.x;
                     const dy = this.player.y - pos.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const distanceSquared = dx * dx + dy * dy;
                     
                     // Safety check to prevent division by zero
-                    if (distance > 0) {
+                    if (Math.sqrt(distanceSquared) > 0) {
                         const speed = 4 + (this.currentBoss.level * 0.5); // Faster boss bullets
+                        if (this.enemyBullets.length > 100) continue; // Limit enemy bullets
                         this.enemyBullets.push(new EnemyBullet(
                             pos.x, pos.y,
-                            (dx / distance) * speed,
-                            (dy / distance) * speed
+                            (dx / Math.sqrt(distanceSquared)) * speed,
+                            (dy / Math.sqrt(distanceSquared)) * speed
                         ));
                     }
                 });
@@ -431,6 +438,7 @@ class SpaceShooter {
                     const turretPositions = this.currentBoss.getTurretFirePositions();
                     turretPositions.forEach(pos => {
                         const speed = 3.5;
+                        if (this.enemyBullets.length > 100) continue; // Limit enemy bullets
                         this.enemyBullets.push(new EnemyBullet(
                             pos.x, pos.y,
                             Math.cos(pos.rotation) * speed,
@@ -483,6 +491,7 @@ class SpaceShooter {
         if (this.enemyFireTimer > 800) { // Enemies fire every 800ms
             this.enemies.forEach(enemy => {
                 if (enemy.type !== 'juggernaut' && Math.random() < 0.3) {
+                        if (this.enemyBullets.length > 100) continue; // Limit enemy bullets
                     this.enemyBullets.push(new Bullet(enemy.x, enemy.y + 15, 4));
                 }
             });
@@ -589,15 +598,51 @@ class SpaceShooter {
         });
         
         // Update particles
+        // Update particles
         this.particles = this.particles.filter(particle => {
-
-        // Update swarm enemies
-        this.swarmEnemies = this.swarmEnemies.filter(swarm => {
-            swarm.update(deltaTime, this.player);
-            // Remove if off screen
-            return swarm.x > -50 && swarm.x < this.width + 50 && swarm.y > -50 && swarm.y < this.height + 50;
-        });
             particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
+        // Update particles
+        this.particles = this.particles.filter(particle => {
+            particle.update(deltaTime);
+            return particle.life > 0;
+        });
             return particle.life > 0;
         });
         
@@ -712,6 +757,7 @@ class SpaceShooter {
         }
         
         // Bullet vs Enemy collisions
+        if (this.bullets.length === 0 || this.enemies.length === 0) return; // Early exit if no objects
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             for (let j = this.enemies.length - 1; j >= 0; j--) {
                 if (this.bullets[i] && this.enemies[j] && 
@@ -864,8 +910,8 @@ class SpaceShooter {
     isColliding(obj1, obj2) {
         const dx = obj1.x - obj2.x;
         const dy = obj1.y - obj2.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < (obj1.radius + obj2.radius);
+        const distanceSquared = dx * dx + dy * dy;
+        const radiusSum = obj1.radius + obj2.radius; return distanceSquared < (radiusSum * radiusSum);
     }
     
     collectPowerup(powerup) {
@@ -1073,6 +1119,11 @@ class SpaceShooter {
     }
     
     gameLoop(currentTime = 0) {
+        // Limit frame rate to prevent excessive updates
+        if (currentTime - this.lastTime < 16) {
+            requestAnimationFrame((time) => this.gameLoop(time));
+            return;
+        }
         const deltaTime = currentTime - this.lastTime;
         this.lastTime = currentTime;
         
@@ -1803,11 +1854,11 @@ class SwarmEnemy {
         // Calculate initial direction toward target
         const dx = targetX - x;
         const dy = targetY - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const distanceSquared = dx * dx + dy * dy;
         
-        if (distance > 0) {
-            this.vx = (dx / distance) * this.speed;
-            this.vy = (dy / distance) * this.speed;
+        if (Math.sqrt(distanceSquared) > 0) {
+            this.vx = (dx / Math.sqrt(distanceSquared)) * this.speed;
+            this.vy = (dy / Math.sqrt(distanceSquared)) * this.speed;
         } else {
             this.vx = 0;
             this.vy = this.speed;
@@ -1820,12 +1871,12 @@ class SwarmEnemy {
         // Continuously adjust direction toward player
         const dx = player.x - this.x;
         const dy = player.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const distanceSquared = dx * dx + dy * dy;
         
-        if (distance > 0) {
+        if (Math.sqrt(distanceSquared) > 0) {
             // Smooth direction change
-            const targetVx = (dx / distance) * this.speed;
-            const targetVy = (dy / distance) * this.speed;
+            const targetVx = (dx / Math.sqrt(distanceSquared)) * this.speed;
+            const targetVy = (dy / Math.sqrt(distanceSquared)) * this.speed;
             
             // Lerp toward target velocity for smooth movement
             this.vx += (targetVx - this.vx) * 0.1;
