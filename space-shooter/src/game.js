@@ -40,14 +40,21 @@ class SpaceShooter {
         // Game objects
         this.player = new Player(this.width / 2, this.height - 50);
         this.bullets = [];
+        this.enemyBullets = [];
         this.enemies = [];
         this.stars = [];
         this.particles = [];
+        this.bulletHellBullets = [];
         
         // Timing
         this.lastTime = 0;
         this.enemySpawnTimer = 0;
         this.fireTimer = 0;
+        this.enemyFireTimer = 0;
+        this.juggernauthSpawnTimer = 0;
+        this.bulletHellTimer = 0;
+        this.bulletHellActive = false;
+        this.bulletHellDuration = 0;
         
         // Initialize
         this.initStarfield();
@@ -88,6 +95,13 @@ class SpaceShooter {
             this.mouseY = e.clientY - rect.top;
         });
         
+        // Manual fire on click
+        this.canvas.addEventListener('click', (e) => {
+            if (this.gameStarted && this.gameRunning) {
+                this.playSound('shoot');
+            }
+        });
+        
         // Start button event listener - wait for DOM to be ready
         setTimeout(() => {
             const startButton = document.getElementById('startButton');
@@ -116,6 +130,24 @@ class SpaceShooter {
         this.enemies.push(new Enemy(x, -30, type));
     }
     
+    spawnJuggernaut() {
+        const x = Math.random() * (this.width - 80);
+        this.enemies.push(new Enemy(x, -60, 'juggernaut'));
+    }
+    
+    activateBulletHell() {
+        this.bulletHellActive = true;
+        this.bulletHellDuration = 5000; // 5 seconds of bullet hell
+        this.bulletHellTimer = 0;
+        
+        // Clear all existing enemies (nuke effect)
+        this.enemies.forEach(enemy => {
+            this.createExplosion(enemy.x, enemy.y);
+        });
+        this.enemies = [];
+        this.playSound('explosion');
+    }
+    
     update(deltaTime) {
         if (!this.gameRunning || !this.gameStarted) {
             // Only log once every 60 frames to avoid spam
@@ -133,11 +165,10 @@ class SpaceShooter {
         this.player.x = Math.max(20, Math.min(this.width - 20, this.player.x));
         this.player.y = Math.max(20, Math.min(this.height - 20, this.player.y));
         
-        // Auto-fire
+        // Auto-fire (no sound)
         this.fireTimer += deltaTime;
         if (this.fireTimer > 150) { // Fire every 150ms
             this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
-            this.playSound('shoot');
             this.fireTimer = 0;
         }
         
@@ -148,6 +179,50 @@ class SpaceShooter {
             this.enemySpawnTimer = 0;
         }
         
+        // Spawn juggernaut occasionally
+        this.juggernauthSpawnTimer += deltaTime;
+        if (this.juggernauthSpawnTimer > 15000) { // Spawn every 15 seconds
+            this.spawnJuggernaut();
+            this.juggernauthSpawnTimer = 0;
+        }
+        
+        // Enemy firing
+        this.enemyFireTimer += deltaTime;
+        if (this.enemyFireTimer > 800) { // Enemies fire every 800ms
+            this.enemies.forEach(enemy => {
+                if (enemy.type !== 'juggernaut' && Math.random() < 0.3) {
+                    this.enemyBullets.push(new Bullet(enemy.x, enemy.y + 15, 4));
+                }
+            });
+            this.enemyFireTimer = 0;
+        }
+        
+        // Bullet hell system
+        if (this.bulletHellActive) {
+            this.bulletHellTimer += deltaTime;
+            
+            // Spawn bullet hell bullets
+            if (this.bulletHellTimer % 100 < deltaTime) { // Every 100ms
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const speed = 3;
+                    this.bulletHellBullets.push({
+                        x: this.width / 2,
+                        y: 50,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        radius: 4
+                    });
+                }
+            }
+            
+            // End bullet hell
+            if (this.bulletHellTimer > this.bulletHellDuration) {
+                this.bulletHellActive = false;
+                this.bulletHellBullets = [];
+            }
+        }
+        
         // Update stars
         this.stars.forEach(star => star.update(deltaTime));
         
@@ -155,6 +230,20 @@ class SpaceShooter {
         this.bullets = this.bullets.filter(bullet => {
             bullet.update(deltaTime);
             return bullet.y > -10 && bullet.y < this.height + 10;
+        });
+        
+        // Update enemy bullets
+        this.enemyBullets = this.enemyBullets.filter(bullet => {
+            bullet.update(deltaTime);
+            return bullet.y > -10 && bullet.y < this.height + 10;
+        });
+        
+        // Update bullet hell bullets
+        this.bulletHellBullets = this.bulletHellBullets.filter(bullet => {
+            bullet.x += bullet.vx * (deltaTime / 16);
+            bullet.y += bullet.vy * (deltaTime / 16);
+            return bullet.x > -10 && bullet.x < this.width + 10 && 
+                   bullet.y > -10 && bullet.y < this.height + 10;
         });
         
         // Update enemies
@@ -194,18 +283,31 @@ class SpaceShooter {
                 if (this.bullets[i] && this.enemies[j] && 
                     this.isColliding(this.bullets[i], this.enemies[j])) {
                     
-                    // Create explosion particles
-                    this.createExplosion(this.enemies[j].x, this.enemies[j].y);
+                    const enemy = this.enemies[j];
                     
-                    // Play hit sound
-                    this.playSound('enemyHit');
+                    // Handle juggernaut hits
+                    if (enemy.type === 'juggernaut') {
+                        enemy.health--;
+                        this.playSound('juggernauthit');
+                        this.createExplosion(enemy.x, enemy.y);
+                        
+                        if (enemy.health <= 0) {
+                            // Juggernaut death - activate bullet hell
+                            this.createExplosion(enemy.x, enemy.y);
+                            this.playSound('explosion');
+                            this.activateBulletHell();
+                            this.enemies.splice(j, 1);
+                            this.score += 1000; // Big points for juggernaut
+                        }
+                    } else {
+                        // Regular enemy death
+                        this.createExplosion(enemy.x, enemy.y);
+                        this.playSound('enemyHit');
+                        this.enemies.splice(j, 1);
+                        this.score += 100;
+                    }
                     
-                    // Remove bullet and enemy
                     this.bullets.splice(i, 1);
-                    this.enemies.splice(j, 1);
-                    
-                    // Increase score
-                    this.score += 100;
                     break;
                 }
             }
@@ -217,6 +319,26 @@ class SpaceShooter {
                 this.createExplosion(this.player.x, this.player.y);
                 this.playSound('explosion');
                 this.enemies.splice(i, 1);
+                this.lives--;
+            }
+        }
+        
+        // Player vs Enemy Bullet collisions
+        for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
+            if (this.isColliding(this.player, this.enemyBullets[i])) {
+                this.createExplosion(this.player.x, this.player.y);
+                this.playSound('explosion');
+                this.enemyBullets.splice(i, 1);
+                this.lives--;
+            }
+        }
+        
+        // Player vs Bullet Hell collisions
+        for (let i = this.bulletHellBullets.length - 1; i >= 0; i--) {
+            if (this.isColliding(this.player, this.bulletHellBullets[i])) {
+                this.createExplosion(this.player.x, this.player.y);
+                this.playSound('explosion');
+                this.bulletHellBullets.splice(i, 1);
                 this.lives--;
             }
         }
@@ -246,8 +368,22 @@ class SpaceShooter {
         // Draw game objects
         this.player.render(this.ctx);
         this.bullets.forEach(bullet => bullet.render(this.ctx));
+        this.enemyBullets.forEach(bullet => {
+            this.ctx.fillStyle = '#ff4444';
+            this.ctx.beginPath();
+            this.ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
         this.enemies.forEach(enemy => enemy.render(this.ctx));
         this.particles.forEach(particle => particle.render(this.ctx));
+        
+        // Draw bullet hell bullets
+        this.bulletHellBullets.forEach(bullet => {
+            this.ctx.fillStyle = '#ff00ff';
+            this.ctx.beginPath();
+            this.ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
         
         // Game over screen
         if (!this.gameRunning) {
@@ -338,10 +474,19 @@ class Enemy {
         this.x = x;
         this.y = y;
         this.type = type;
-        this.radius = 12;
-        this.speed = 2;
         this.zigzagTimer = 0;
         this.zigzagDirection = 1;
+        
+        // Set properties based on type
+        if (type === 'juggernaut') {
+            this.radius = 30;
+            this.speed = 0.5;
+            this.health = 10;
+        } else {
+            this.radius = 12;
+            this.speed = 2;
+            this.health = 1;
+        }
     }
     
     update(deltaTime) {
@@ -371,21 +516,48 @@ class Enemy {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        // Draw enemy ship
-        ctx.fillStyle = '#ff0000';
-        ctx.beginPath();
-        ctx.moveTo(0, 12);
-        ctx.lineTo(-8, -8);
-        ctx.lineTo(0, -4);
-        ctx.lineTo(8, -8);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Enemy details
-        ctx.fillStyle = '#ff6666';
-        ctx.beginPath();
-        ctx.arc(0, 0, 4, 0, Math.PI * 2);
-        ctx.fill();
+        if (this.type === 'juggernaut') {
+            // Draw massive juggernaut
+            ctx.fillStyle = '#8800ff';
+            ctx.strokeStyle = '#ff00ff';
+            ctx.lineWidth = 3;
+            
+            // Main body
+            ctx.fillRect(-25, -20, 50, 40);
+            ctx.strokeRect(-25, -20, 50, 40);
+            
+            // Health indicator
+            const healthPercent = this.health / 10;
+            ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : '#ff0000';
+            ctx.fillRect(-20, -25, 40 * healthPercent, 3);
+            
+            // Weapons
+            ctx.fillStyle = '#ff4444';
+            ctx.fillRect(-30, -5, 10, 3);
+            ctx.fillRect(20, -5, 10, 3);
+            
+            // Core
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(0, 0, 8, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Draw regular enemy ship
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath();
+            ctx.moveTo(0, 12);
+            ctx.lineTo(-8, -8);
+            ctx.lineTo(0, -4);
+            ctx.lineTo(8, -8);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Enemy details
+            ctx.fillStyle = '#ff6666';
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
         
         ctx.restore();
     }
