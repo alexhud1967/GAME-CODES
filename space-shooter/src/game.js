@@ -251,8 +251,10 @@ class SpaceShooter {
         setTimeout(() => {
             const startButton = document.getElementById('startButton');
             if (startButton) {
+                console.log("Start button found, adding event listener");
                 startButton.addEventListener('click', () => {
                     this.startGame();
+                    console.log("Start button clicked!");
                 });
             }
         }, 100);
