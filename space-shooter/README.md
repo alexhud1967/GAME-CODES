@@ -30,7 +30,7 @@ A classic arcade-style space shooter built with HTML5 Canvas and JavaScript.
 
 ```
 space-shooter/
-├── index.html          # Main game page
+├── space-shooter.html  # Main game page
 ├── src/
 │   └── game.js         # Complete game logic
 ├── assets/
@@ -41,7 +41,7 @@ space-shooter/
 
 ## How to Play
 
-1. Open `index.html` in a web browser
+1. Open `space-shooter.html` in a web browser
 2. Move your mouse to control the green spaceship
 3. Bullets fire automatically
 4. Destroy red enemy ships for points
@@ -53,11 +53,11 @@ space-shooter/
 **For itch.io:**
 1. Zip the entire `space-shooter` folder
 2. Upload to itch.io as an HTML5 game
-3. Set `index.html` as the main file
+3. Set `space-shooter.html` as the main file
 
 **For web hosting:**
 - Upload all files to your web server
-- Access via `index.html`
+- Access via `space-shooter.html`
 
 ## Game Mechanics
 
@@ -86,4 +86,3 @@ space-shooter/
 
 ## Tags
 `html5` `javascript` `arcade` `shooter` `itch.io`
-
