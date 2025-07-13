@@ -18,6 +18,11 @@ class SpaceShooter {
         this.playerCannons = 1; // Number of cannons (1-3)
         this.playerShield = 0; // Shield strength (0-3)
         
+        // Boss system
+        this.bosses = [];
+        this.currentBoss = null;
+        this.bossActive = false;
+        
         // Audio system
         this.sounds = {
             background: new Audio('assets/sounds/background.wav'),
@@ -265,20 +270,42 @@ class SpaceShooter {
             this.fireTimer = 0;
         }
         
-        // Spawn enemies (level-based difficulty)
-        this.enemySpawnTimer += deltaTime;
-        const spawnRate = Math.max(500, 1000 - (this.level * 100)); // Faster spawning per level
-        if (this.enemySpawnTimer > spawnRate) {
-            this.spawnEnemy();
-            this.enemySpawnTimer = 0;
-        }
-        
-        // Spawn juggernaut occasionally (more frequent at higher levels)
-        this.juggernauthSpawnTimer += deltaTime;
-        const juggernauthRate = Math.max(8000, 15000 - (this.level * 1000)); // More frequent per level
-        if (this.juggernauthSpawnTimer > juggernauthRate) {
-            this.spawnJuggernaut();
-            this.juggernauthSpawnTimer = 0;
+        // Boss logic
+        if (this.bossActive && this.currentBoss) {
+            this.currentBoss.update(deltaTime, this.player);
+            
+            // Boss firing
+            if (this.currentBoss.fireTimer > this.currentBoss.fireRate) {
+                const firePositions = this.currentBoss.getFirePositions();
+                firePositions.forEach(pos => {
+                    const dx = this.player.x - pos.x;
+                    const dy = this.player.y - pos.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const speed = 3;
+                    this.enemyBullets.push(new EnemyBullet(
+                        pos.x, pos.y,
+                        (dx / distance) * speed,
+                        (dy / distance) * speed
+                    ));
+                });
+                this.currentBoss.fireTimer = 0;
+            }
+        } else {
+            // Regular enemy spawning (only when no boss)
+            this.enemySpawnTimer += deltaTime;
+            const spawnRate = Math.max(500, 1000 - (this.level * 100)); // Faster spawning per level
+            if (this.enemySpawnTimer > spawnRate) {
+                this.spawnEnemy();
+                this.enemySpawnTimer = 0;
+            }
+            
+            // Spawn juggernaut occasionally (more frequent at higher levels)
+            this.juggernauthSpawnTimer += deltaTime;
+            const juggernauthRate = Math.max(8000, 15000 - (this.level * 1000)); // More frequent per level
+            if (this.juggernauthSpawnTimer > juggernauthRate) {
+                this.spawnJuggernaut();
+                this.juggernauthSpawnTimer = 0;
+            }
         }
         
         // Powerup spawning
@@ -469,6 +496,35 @@ class SpaceShooter {
     }
     
     checkCollisions() {
+        // Bullet vs Boss collisions
+        if (this.bossActive && this.currentBoss) {
+            for (let i = this.bullets.length - 1; i >= 0; i--) {
+                if (this.bullets[i] && this.isColliding(this.bullets[i], this.currentBoss)) {
+                    this.currentBoss.health -= 5;
+                    this.createExplosion(this.bullets[i].x, this.bullets[i].y);
+                    this.playSound('enemyHit');
+                    this.bullets.splice(i, 1);
+                    
+                    // Check if boss is defeated
+                    if (this.currentBoss.health <= 0) {
+                        this.createExplosion(this.currentBoss.x, this.currentBoss.y);
+                        this.playSound('explosion');
+                        this.score += 1000 + (this.level * 500); // Big score bonus
+                        this.currentBoss = null;
+                        this.bossActive = false;
+                        
+                        // Spawn multiple powerups as reward
+                        for (let k = 0; k < 3; k++) {
+                            setTimeout(() => {
+                                this.spawnPowerup();
+                            }, k * 200);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        
         // Bullet vs Enemy collisions
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             for (let j = this.enemies.length - 1; j >= 0; j--) {
@@ -621,10 +677,22 @@ class SpaceShooter {
         this.powerups.push(new Powerup(x, -30, type));
     }
     
+    spawnBoss() {
+        if (!this.bossActive) {
+            this.currentBoss = new Boss(400, 100, this.level);
+            this.bossActive = true;
+            // Clear regular enemies when boss spawns
+            this.enemies = [];
+        }
+    }
+    
     checkLevelUp() {
         if (this.score >= this.nextLevelThreshold) {
             this.level++;
             this.nextLevelThreshold += 5000 + (this.level * 2000); // Increasing requirements
+            
+            // Check if this is a boss level (every 3 levels)
+            const isBossLevel = this.level % 3 === 0;
             
             // Level up effects
             this.createExplosion(this.width / 2, this.height / 2);
@@ -648,7 +716,20 @@ class SpaceShooter {
                     levelUpMsg.style.zIndex = '1000';
                     document.body.appendChild(levelUpMsg);
                 }
-                levelUpMsg.textContent = `LEVEL ${this.level}!`;
+                
+                if (isBossLevel) {
+                    levelUpMsg.textContent = `BOSS LEVEL ${this.level}!`;
+                    levelUpMsg.style.color = 'red';
+                    levelUpMsg.style.fontSize = '32px';
+                    // Trigger boss spawn
+                    setTimeout(() => {
+                        this.spawnBoss();
+                    }, 2500);
+                } else {
+                    levelUpMsg.textContent = `LEVEL ${this.level}!`;
+                    levelUpMsg.style.color = 'yellow';
+                    levelUpMsg.style.fontSize = '24px';
+                }
                 levelUpMsg.style.display = 'block';
                 
                 setTimeout(() => {
@@ -705,6 +786,12 @@ class SpaceShooter {
             this.ctx.fill();
         });
         this.enemies.forEach(enemy => enemy.render(this.ctx));
+        
+        // Draw boss
+        if (this.bossActive && this.currentBoss) {
+            this.currentBoss.render(this.ctx);
+        }
+        
         this.particles.forEach(particle => particle.render(this.ctx));
         
         // Draw powerups
@@ -1184,6 +1271,210 @@ class Particle {
         ctx.beginPath();
         ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
         ctx.fill();
+    }
+}
+
+// Boss class
+class Boss {
+    constructor(x, y, level) {
+        this.x = x;
+        this.y = y;
+        this.level = level;
+        this.radius = 60;
+        this.speed = 0.5;
+        this.direction = 1;
+        this.health = 50 + (level * 25); // Scaling health
+        this.maxHealth = this.health;
+        this.fireTimer = 0;
+        this.fireRate = 300;
+        this.phase = 0;
+        this.phaseTimer = 0;
+        this.rotation = 0;
+        
+        // Boss type based on level
+        if (level === 3) {
+            this.type = 'mothership';
+            this.radius = 80;
+            this.cannons = 4;
+        } else if (level === 6) {
+            this.type = 'twin-core';
+            this.radius = 70;
+            this.cores = 2;
+        } else if (level === 9) {
+            this.type = 'leviathan';
+            this.radius = 90;
+            this.tentacles = 6;
+        } else if (level === 12) {
+            this.type = 'quantum';
+            this.radius = 75;
+            this.teleportTimer = 0;
+        } else {
+            // Default boss for higher levels
+            this.type = 'ultimate';
+            this.radius = 100;
+            this.health = 100 + (level * 50);
+            this.maxHealth = this.health;
+        }
+    }
+    
+    update(deltaTime, player) {
+        // Movement patterns based on boss type
+        if (this.type === 'mothership') {
+            // Slow horizontal movement with rotation
+            this.x += this.speed * this.direction * (deltaTime / 16);
+            this.rotation += 0.02 * (deltaTime / 16);
+            if (this.x <= 50 || this.x >= 750) this.direction *= -1;
+        } else if (this.type === 'twin-core') {
+            // Figure-8 movement
+            this.phaseTimer += 0.03 * (deltaTime / 16);
+            this.x = 400 + Math.sin(this.phaseTimer) * 200;
+            this.y = 150 + Math.sin(this.phaseTimer * 2) * 50;
+        } else if (this.type === 'leviathan') {
+            // Serpentine movement
+            this.phaseTimer += 0.02 * (deltaTime / 16);
+            this.x = 400 + Math.sin(this.phaseTimer) * 300;
+            this.y = 100 + Math.sin(this.phaseTimer * 0.5) * 30;
+        } else if (this.type === 'quantum') {
+            // Teleporting movement
+            this.teleportTimer += deltaTime;
+            if (this.teleportTimer > 2000) {
+                this.x = Math.random() * 600 + 100;
+                this.y = Math.random() * 100 + 50;
+                this.teleportTimer = 0;
+            }
+        }
+        
+        // Keep boss on screen
+        this.x = Math.max(this.radius, Math.min(800 - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(200, this.y));
+        
+        this.fireTimer += deltaTime;
+    }
+    
+    render(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        
+        // Health bar
+        const barWidth = 100;
+        const barHeight = 8;
+        const healthPercent = this.health / this.maxHealth;
+        
+        ctx.fillStyle = 'red';
+        ctx.fillRect(-barWidth/2, -this.radius - 20, barWidth, barHeight);
+        ctx.fillStyle = 'green';
+        ctx.fillRect(-barWidth/2, -this.radius - 20, barWidth * healthPercent, barHeight);
+        
+        // Boss rendering based on type
+        if (this.type === 'mothership') {
+            // Large ship with rotating cannons
+            ctx.fillStyle = '#666';
+            ctx.fillRect(-this.radius, -this.radius/2, this.radius * 2, this.radius);
+            ctx.fillStyle = '#888';
+            ctx.fillRect(-this.radius/2, -this.radius/3, this.radius, this.radius/1.5);
+            
+            // Rotating cannons
+            for (let i = 0; i < 4; i++) {
+                const angle = (i * Math.PI / 2) + this.rotation;
+                const cannonX = Math.cos(angle) * this.radius * 0.8;
+                const cannonY = Math.sin(angle) * this.radius * 0.8;
+                ctx.fillStyle = '#444';
+                ctx.fillRect(cannonX - 5, cannonY - 15, 10, 30);
+            }
+        } else if (this.type === 'twin-core') {
+            // Twin cores with energy bridge
+            ctx.fillStyle = '#ff4444';
+            ctx.beginPath();
+            ctx.arc(-this.radius/3, 0, this.radius/3, 0, Math.PI * 2);
+            ctx.arc(this.radius/3, 0, this.radius/3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Energy bridge
+            ctx.strokeStyle = '#ffff44';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(-this.radius/3, 0);
+            ctx.lineTo(this.radius/3, 0);
+            ctx.stroke();
+        } else if (this.type === 'leviathan') {
+            // Central body with tentacles
+            ctx.fillStyle = '#4444ff';
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius/2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Tentacles
+            for (let i = 0; i < 6; i++) {
+                const angle = (i * Math.PI / 3) + this.phaseTimer;
+                const tentacleLength = this.radius * 0.8;
+                ctx.strokeStyle = '#6666ff';
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(
+                    Math.cos(angle) * tentacleLength,
+                    Math.sin(angle) * tentacleLength
+                );
+                ctx.stroke();
+            }
+        } else if (this.type === 'quantum') {
+            // Crystalline structure with energy field
+            ctx.fillStyle = '#ff44ff';
+            ctx.beginPath();
+            for (let i = 0; i < 8; i++) {
+                const angle = (i * Math.PI / 4);
+                const radius = i % 2 === 0 ? this.radius : this.radius * 0.6;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            
+            // Energy field
+            ctx.strokeStyle = '#ffff44';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius * 1.2, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    }
+    
+    getFirePositions() {
+        const positions = [];
+        if (this.type === 'mothership') {
+            // Fire from rotating cannons
+            for (let i = 0; i < 4; i++) {
+                const angle = (i * Math.PI / 2) + this.rotation;
+                positions.push({
+                    x: this.x + Math.cos(angle) * this.radius * 0.8,
+                    y: this.y + Math.sin(angle) * this.radius * 0.8
+                });
+            }
+        } else if (this.type === 'twin-core') {
+            // Fire from both cores
+            positions.push(
+                { x: this.x - this.radius/3, y: this.y + this.radius/3 },
+                { x: this.x + this.radius/3, y: this.y + this.radius/3 }
+            );
+        } else if (this.type === 'leviathan') {
+            // Fire from tentacle tips
+            for (let i = 0; i < 3; i++) {
+                const angle = (i * Math.PI / 1.5) + this.phaseTimer;
+                positions.push({
+                    x: this.x + Math.cos(angle) * this.radius * 0.8,
+                    y: this.y + Math.sin(angle) * this.radius * 0.8
+                });
+            }
+        } else {
+            // Default firing pattern
+            positions.push({ x: this.x, y: this.y + this.radius });
+        }
+        return positions;
     }
 }
 
