@@ -34,6 +34,12 @@ class SpaceShooter {
             shoot: new Audio('assets/sounds/shoot.wav')
         };
         
+        // Audio control
+        this.masterVolume = 0.7;
+        this.musicVolume = 0.7;
+        this.sfxVolume = 0.8;
+        this.fadeIntervals = new Map(); // Track active fades
+        
         // Configure audio
         this.sounds.background.loop = true;
         this.sounds.background.volume = 0.3;
@@ -76,6 +82,7 @@ class SpaceShooter {
         // Initialize
         this.initStarfield();
         this.setupEventListeners();
+        this.setupVolumeControls();
         this.gameLoop();
     }
     
@@ -85,6 +92,7 @@ class SpaceShooter {
             if (sound) {
                 // Reset sound to beginning for rapid-fire sounds
                 sound.currentTime = 0;
+                sound.volume = this.sfxVolume * this.masterVolume;
                 sound.play().catch(e => {
                     // Handle autoplay restrictions gracefully
                     console.log(`Audio autoplay blocked for ${soundName}`);
@@ -93,6 +101,103 @@ class SpaceShooter {
         } catch (error) {
             console.log(`Error playing sound ${soundName}:`, error);
         }
+    }
+    
+    // Audio fade methods
+    fadeOut(audio, duration = 2000, callback = null) {
+        const fadeKey = audio.src;
+        
+        // Clear any existing fade for this audio
+        if (this.fadeIntervals.has(fadeKey)) {
+            clearInterval(this.fadeIntervals.get(fadeKey));
+        }
+        
+        const startVolume = audio.volume;
+        const fadeStep = startVolume / (duration / 50); // 50ms intervals
+        
+        const fadeInterval = setInterval(() => {
+            audio.volume = Math.max(0, audio.volume - fadeStep);
+            
+            if (audio.volume <= 0) {
+                audio.pause();
+                clearInterval(fadeInterval);
+                this.fadeIntervals.delete(fadeKey);
+                if (callback) callback();
+            }
+        }, 50);
+        
+        this.fadeIntervals.set(fadeKey, fadeInterval);
+    }
+    
+    fadeIn(audio, targetVolume = null, duration = 2000, callback = null) {
+        const fadeKey = audio.src;
+        
+        // Clear any existing fade for this audio
+        if (this.fadeIntervals.has(fadeKey)) {
+            clearInterval(this.fadeIntervals.get(fadeKey));
+        }
+        
+        if (targetVolume === null) {
+            targetVolume = this.musicVolume * this.masterVolume;
+        }
+        
+        audio.volume = 0;
+        audio.currentTime = 0;
+        audio.play().catch(e => console.log('Fade in play failed:', e));
+        
+        const fadeStep = targetVolume / (duration / 50); // 50ms intervals
+        
+        const fadeInterval = setInterval(() => {
+            audio.volume = Math.min(targetVolume, audio.volume + fadeStep);
+            
+            if (audio.volume >= targetVolume) {
+                clearInterval(fadeInterval);
+                this.fadeIntervals.delete(fadeKey);
+                if (callback) callback();
+            }
+        }, 50);
+        
+        this.fadeIntervals.set(fadeKey, fadeInterval);
+    }
+    
+    crossfade(fromAudio, toAudio, duration = 2000) {
+        this.fadeOut(fromAudio, duration);
+        this.fadeIn(toAudio, null, duration);
+    }
+    
+    setupVolumeControls() {
+        const masterSlider = document.getElementById('masterVolume');
+        const musicSlider = document.getElementById('musicVolume');
+        const sfxSlider = document.getElementById('sfxVolume');
+        
+        if (masterSlider) {
+            masterSlider.addEventListener('input', (e) => {
+                this.masterVolume = e.target.value / 100;
+                this.updateAllVolumes();
+            });
+        }
+        
+        if (musicSlider) {
+            musicSlider.addEventListener('input', (e) => {
+                this.musicVolume = e.target.value / 100;
+                this.updateAllVolumes();
+            });
+        }
+        
+        if (sfxSlider) {
+            sfxSlider.addEventListener('input', (e) => {
+                this.sfxVolume = e.target.value / 100;
+                this.updateAllVolumes();
+            });
+        }
+    }
+    
+    updateAllVolumes() {
+        // Update music volumes
+        this.sounds.background.volume = this.musicVolume * this.masterVolume;
+        this.sounds.bossbattle.volume = this.musicVolume * this.masterVolume;
+        
+        // SFX volumes are updated when played via playSound method
     }
     
     initStarfield() {
@@ -447,6 +552,7 @@ class SpaceShooter {
         // Update UI
         document.getElementById('score').textContent = this.score;
         document.getElementById('lives').textContent = this.lives;
+        document.getElementById('level').textContent = this.level;
         
         // Update level and upgrade displays (create if they don't exist)
         let levelDisplay = document.getElementById('level');
@@ -514,10 +620,9 @@ class SpaceShooter {
                         this.currentBoss = null;
                         this.bossActive = false;
                         
-                        // Stop boss music and resume background music
-                        this.sounds.bossbattle.pause();
-                        this.sounds.background.currentTime = 0;
-                        this.sounds.background.play().catch(e => console.log('Background music resume failed:', e));
+                        // Epic music transition back to background
+                        this.sounds.background.loop = true;
+                        this.crossfade(this.sounds.bossbattle, this.sounds.background, 2000);
                         
                         // Spawn multiple powerups as reward
                         for (let k = 0; k < 3; k++) {
@@ -690,12 +795,9 @@ class SpaceShooter {
             // Clear regular enemies when boss spawns
             this.enemies = [];
             
-            // Start boss battle music
-            this.sounds.background.pause();
-            this.sounds.bossbattle.currentTime = 0;
+            // Epic music transition - crossfade to boss music
             this.sounds.bossbattle.loop = true;
-            this.sounds.bossbattle.volume = 0.7;
-            this.sounds.bossbattle.play().catch(e => console.log('Boss music play failed:', e));
+            this.crossfade(this.sounds.background, this.sounds.bossbattle, 2000);
         }
     }
     
@@ -1287,47 +1389,23 @@ class Particle {
     }
 }
 
-// Boss class
+// Boss class - Simplified Large Juggernaut
 class Boss {
     constructor(x, y, level) {
         this.x = x;
         this.y = y;
         this.level = level;
-        this.radius = 60;
-        this.speed = 0.5;
+        this.radius = 80 + (level * 5); // Grows with level
+        this.speed = 1;
         this.direction = 1;
-        this.health = 50 + (level * 25); // Scaling health
+        this.health = 100 + (level * 50); // Scaling health
         this.maxHealth = this.health;
         this.fireTimer = 0;
-        this.fireRate = 300;
-        this.phase = 0;
-        this.phaseTimer = 0;
+        this.fireRate = 200; // Faster firing
         this.rotation = 0;
-        
-        // Boss type based on level
-        if (level === 3) {
-            this.type = 'mothership';
-            this.radius = 80;
-            this.cannons = 4;
-        } else if (level === 6) {
-            this.type = 'twin-core';
-            this.radius = 70;
-            this.cores = 2;
-        } else if (level === 9) {
-            this.type = 'leviathan';
-            this.radius = 90;
-            this.tentacles = 6;
-        } else if (level === 12) {
-            this.type = 'quantum';
-            this.radius = 75;
-            this.teleportTimer = 0;
-        } else {
-            // Default boss for higher levels
-            this.type = 'ultimate';
-            this.radius = 100;
-            this.health = 100 + (level * 50);
-            this.maxHealth = this.health;
-        }
+        this.cannonRotation = 0;
+        this.cannons = Math.min(6, 2 + Math.floor(level / 3)); // More cannons per level
+        this.type = 'mega-juggernaut';
     }
     
     update(deltaTime, player) {
@@ -1336,31 +1414,14 @@ class Boss {
             deltaTime = 16; // Default to 60fps
         }
         
-        // Movement patterns based on boss type
-        if (this.type === 'mothership') {
-            // Slow horizontal movement with rotation
-            this.x += this.speed * this.direction * (deltaTime / 16);
-            this.rotation += 0.02 * (deltaTime / 16);
-            if (this.x <= 50 || this.x >= 750) this.direction *= -1;
-        } else if (this.type === 'twin-core') {
-            // Figure-8 movement
-            this.phaseTimer += 0.03 * (deltaTime / 16);
-            this.x = 400 + Math.sin(this.phaseTimer) * 200;
-            this.y = 150 + Math.sin(this.phaseTimer * 2) * 50;
-        } else if (this.type === 'leviathan') {
-            // Serpentine movement
-            this.phaseTimer += 0.02 * (deltaTime / 16);
-            this.x = 400 + Math.sin(this.phaseTimer) * 300;
-            this.y = 100 + Math.sin(this.phaseTimer * 0.5) * 30;
-        } else if (this.type === 'quantum') {
-            // Teleporting movement
-            this.teleportTimer += deltaTime;
-            if (this.teleportTimer > 2000) {
-                this.x = Math.random() * 600 + 100;
-                this.y = Math.random() * 100 + 50;
-                this.teleportTimer = 0;
-            }
+        // Simple horizontal movement like juggernaut
+        this.x += this.speed * this.direction * (deltaTime / 16);
+        if (this.x <= this.radius || this.x >= 800 - this.radius) {
+            this.direction *= -1;
         }
+        
+        // Rotate cannons continuously
+        this.cannonRotation += 0.03 * (deltaTime / 16);
         
         // Keep boss on screen
         this.x = Math.max(this.radius, Math.min(800 - this.radius, this.x));
@@ -1372,129 +1433,70 @@ class Boss {
     render(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.rotation);
         
         // Health bar
-        const barWidth = 100;
-        const barHeight = 8;
+        const barWidth = 120;
+        const barHeight = 10;
         const healthPercent = this.health / this.maxHealth;
         
         ctx.fillStyle = 'red';
-        ctx.fillRect(-barWidth/2, -this.radius - 20, barWidth, barHeight);
+        ctx.fillRect(-barWidth/2, -this.radius - 25, barWidth, barHeight);
         ctx.fillStyle = 'green';
-        ctx.fillRect(-barWidth/2, -this.radius - 20, barWidth * healthPercent, barHeight);
+        ctx.fillRect(-barWidth/2, -this.radius - 25, barWidth * healthPercent, barHeight);
         
-        // Boss rendering based on type
-        if (this.type === 'mothership') {
-            // Large ship with rotating cannons
+        // Main body (large juggernaut style)
+        ctx.fillStyle = '#ff4444';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner core
+        ctx.fillStyle = '#ff6666';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Rotating cannons around the perimeter
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i * (Math.PI * 2) / this.cannons) + this.cannonRotation;
+            const cannonX = Math.cos(angle) * this.radius * 0.9;
+            const cannonY = Math.sin(angle) * this.radius * 0.9;
+            
+            ctx.save();
+            ctx.translate(cannonX, cannonY);
+            ctx.rotate(angle);
+            
+            // Cannon barrel
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-3, -15, 6, 30);
+            
+            // Cannon base
             ctx.fillStyle = '#666';
-            ctx.fillRect(-this.radius, -this.radius/2, this.radius * 2, this.radius);
-            ctx.fillStyle = '#888';
-            ctx.fillRect(-this.radius/2, -this.radius/3, this.radius, this.radius/1.5);
-            
-            // Rotating cannons
-            for (let i = 0; i < 4; i++) {
-                const angle = (i * Math.PI / 2) + this.rotation;
-                const cannonX = Math.cos(angle) * this.radius * 0.8;
-                const cannonY = Math.sin(angle) * this.radius * 0.8;
-                ctx.fillStyle = '#444';
-                ctx.fillRect(cannonX - 5, cannonY - 15, 10, 30);
-            }
-        } else if (this.type === 'twin-core') {
-            // Twin cores with energy bridge
-            ctx.fillStyle = '#ff4444';
-            // Left core
             ctx.beginPath();
-            ctx.arc(-this.radius/3, 0, this.radius/3, 0, Math.PI * 2);
-            ctx.fill();
-            // Right core
-            ctx.beginPath();
-            ctx.arc(this.radius/3, 0, this.radius/3, 0, Math.PI * 2);
+            ctx.arc(0, 0, 8, 0, Math.PI * 2);
             ctx.fill();
             
-            // Energy bridge
-            ctx.strokeStyle = '#ffff44';
-            ctx.lineWidth = 5;
-            ctx.beginPath();
-            ctx.moveTo(-this.radius/3, 0);
-            ctx.lineTo(this.radius/3, 0);
-            ctx.stroke();
-        } else if (this.type === 'leviathan') {
-            // Central body with tentacles
-            ctx.fillStyle = '#4444ff';
-            ctx.beginPath();
-            ctx.arc(0, 0, this.radius/2, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Tentacles
-            for (let i = 0; i < 6; i++) {
-                const angle = (i * Math.PI / 3) + this.phaseTimer;
-                const tentacleLength = this.radius * 0.8;
-                ctx.strokeStyle = '#6666ff';
-                ctx.lineWidth = 8;
-                ctx.beginPath();
-                ctx.moveTo(0, 0);
-                ctx.lineTo(
-                    Math.cos(angle) * tentacleLength,
-                    Math.sin(angle) * tentacleLength
-                );
-                ctx.stroke();
-            }
-        } else if (this.type === 'quantum') {
-            // Crystalline structure with energy field
-            ctx.fillStyle = '#ff44ff';
-            ctx.beginPath();
-            for (let i = 0; i < 8; i++) {
-                const angle = (i * Math.PI / 4);
-                const radius = i % 2 === 0 ? this.radius : this.radius * 0.6;
-                const x = Math.cos(angle) * radius;
-                const y = Math.sin(angle) * radius;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.closePath();
-            ctx.fill();
-            
-            // Energy field
-            ctx.strokeStyle = '#ffff44';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.radius * 1.2, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.restore();
         }
+        
+        // Boss level indicator
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`BOSS LV${this.level}`, 0, 5);
         
         ctx.restore();
     }
     
     getFirePositions() {
         const positions = [];
-        if (this.type === 'mothership') {
-            // Fire from rotating cannons
-            for (let i = 0; i < 4; i++) {
-                const angle = (i * Math.PI / 2) + this.rotation;
-                positions.push({
-                    x: this.x + Math.cos(angle) * this.radius * 0.8,
-                    y: this.y + Math.sin(angle) * this.radius * 0.8
-                });
-            }
-        } else if (this.type === 'twin-core') {
-            // Fire from both cores
-            positions.push(
-                { x: this.x - this.radius/3, y: this.y + this.radius/3 },
-                { x: this.x + this.radius/3, y: this.y + this.radius/3 }
-            );
-        } else if (this.type === 'leviathan') {
-            // Fire from tentacle tips
-            for (let i = 0; i < 3; i++) {
-                const angle = (i * Math.PI / 1.5) + this.phaseTimer;
-                positions.push({
-                    x: this.x + Math.cos(angle) * this.radius * 0.8,
-                    y: this.y + Math.sin(angle) * this.radius * 0.8
-                });
-            }
-        } else {
-            // Default firing pattern
-            positions.push({ x: this.x, y: this.y + this.radius });
+        // Fire from all rotating cannons
+        for (let i = 0; i < this.cannons; i++) {
+            const angle = (i * (Math.PI * 2) / this.cannons) + this.cannonRotation;
+            positions.push({
+                x: this.x + Math.cos(angle) * this.radius * 0.9,
+                y: this.y + Math.sin(angle) * this.radius * 0.9
+            });
         }
         return positions;
     }
