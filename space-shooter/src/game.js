@@ -162,15 +162,29 @@ class SpaceShooter {
         this.shockwaveActive = true;
         this.shockwaves = [];
         
-        // Create multiple expanding shockwave rings
-        for (let i = 0; i < 5; i++) {
+        // Create multiple rotating bullet starbursts
+        for (let wave = 0; wave < 3; wave++) {
+            const bullets = [];
+            const bulletCount = 16; // 16 bullets per starburst
+            const startRadius = 20 + wave * 15;
+            
+            for (let i = 0; i < bulletCount; i++) {
+                const angle = (i / bulletCount) * Math.PI * 2;
+                bullets.push({
+                    x: x,
+                    y: y,
+                    angle: angle,
+                    speed: 2 + wave * 0.5,
+                    radius: 4,
+                    active: true,
+                    distance: startRadius
+                });
+            }
+            
             this.shockwaves.push({
-                x: x,
-                y: y,
-                radius: i * 30,
-                maxRadius: 400 + i * 50,
-                speed: 3 + i * 0.5,
-                thickness: 15,
+                bullets: bullets,
+                rotationSpeed: 0.02 + wave * 0.01, // Different rotation speeds
+                maxDistance: 400 + wave * 100,
                 active: true
             });
         }
@@ -266,8 +280,26 @@ class SpaceShooter {
             let activeShockwaves = 0;
             this.shockwaves.forEach(shockwave => {
                 if (shockwave.active) {
-                    shockwave.radius += shockwave.speed * (deltaTime / 16);
-                    if (shockwave.radius > shockwave.maxRadius) {
+                    // Rotate the entire starburst
+                    shockwave.bullets.forEach(bullet => {
+                        if (bullet.active) {
+                            bullet.angle += shockwave.rotationSpeed * (deltaTime / 16);
+                            bullet.distance += bullet.speed * (deltaTime / 16);
+                            
+                            // Update bullet position based on angle and distance
+                            bullet.x = bullet.x + Math.cos(bullet.angle) * bullet.speed * (deltaTime / 16);
+                            bullet.y = bullet.y + Math.sin(bullet.angle) * bullet.speed * (deltaTime / 16);
+                            
+                            // Deactivate bullets that go too far
+                            if (bullet.distance > shockwave.maxDistance) {
+                                bullet.active = false;
+                            }
+                        }
+                    });
+                    
+                    // Check if any bullets are still active
+                    const activeBullets = shockwave.bullets.filter(b => b.active);
+                    if (activeBullets.length === 0) {
                         shockwave.active = false;
                     } else {
                         activeShockwaves++;
@@ -401,21 +433,18 @@ class SpaceShooter {
             }
         }
         
-        // Player vs Shockwave collisions
+        // Player vs Shockwave bullet collisions
         if (this.shockwaveActive) {
             this.shockwaves.forEach(shockwave => {
                 if (shockwave.active) {
-                    const dx = this.player.x - shockwave.x;
-                    const dy = this.player.y - shockwave.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    // Check if player is within shockwave ring
-                    if (distance > shockwave.radius - shockwave.thickness/2 && 
-                        distance < shockwave.radius + shockwave.thickness/2) {
-                        this.createExplosion(this.player.x, this.player.y);
-                        this.playSound('explosion');
-                        this.lives--;
-                    }
+                    shockwave.bullets.forEach(bullet => {
+                        if (bullet.active && this.isColliding(this.player, bullet)) {
+                            this.createExplosion(this.player.x, this.player.y);
+                            this.playSound('explosion');
+                            bullet.active = false; // Remove the bullet that hit
+                            this.lives--;
+                        }
+                    });
                 }
             });
         }
@@ -462,17 +491,27 @@ class SpaceShooter {
             this.ctx.fill();
         });
         
-        // Draw shockwaves
+        // Draw shockwave bullets
         if (this.shockwaveActive) {
             this.shockwaves.forEach(shockwave => {
                 if (shockwave.active) {
-                    this.ctx.strokeStyle = '#00ffff';
-                    this.ctx.lineWidth = shockwave.thickness;
-                    this.ctx.globalAlpha = 0.8;
-                    this.ctx.beginPath();
-                    this.ctx.arc(shockwave.x, shockwave.y, shockwave.radius, 0, Math.PI * 2);
-                    this.ctx.stroke();
-                    this.ctx.globalAlpha = 1.0;
+                    shockwave.bullets.forEach(bullet => {
+                        if (bullet.active) {
+                            this.ctx.fillStyle = '#00ffff';
+                            this.ctx.globalAlpha = 0.9;
+                            this.ctx.beginPath();
+                            this.ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                            this.ctx.fill();
+                            
+                            // Add glow effect
+                            this.ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+                            this.ctx.beginPath();
+                            this.ctx.arc(bullet.x, bullet.y, bullet.radius + 2, 0, Math.PI * 2);
+                            this.ctx.fill();
+                            
+                            this.ctx.globalAlpha = 1.0;
+                        }
+                    });
                 }
             });
         }
