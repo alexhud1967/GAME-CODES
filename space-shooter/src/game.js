@@ -439,7 +439,7 @@ class SpaceShooter {
                     });
                     
                     // Swarm spawning
-                    if (this.currentBoss.shouldSpawnSwarm()) {
+                    if (this.currentBoss.shouldSpawnSwarm() && this.swarmEnemies.length < 20) {
                         for (let i = 0; i < this.currentBoss.swarmSize; i++) {
                             const angle = (i / this.currentBoss.swarmSize) * Math.PI * 2;
                             const spawnX = this.currentBoss.x + Math.cos(angle) * (this.currentBoss.radius + 50);
@@ -1076,7 +1076,7 @@ class SpaceShooter {
         const deltaTime = currentTime - this.lastTime;
         this.lastTime = currentTime;
         
-        this.update(deltaTime);
+        try { this.update(deltaTime); } catch(e) { console.error("Update error:", e); }
         this.render();
         
         requestAnimationFrame((time) => this.gameLoop(time));
@@ -1706,8 +1706,9 @@ class FinalBoss {
     }
     
     shouldSpawnSwarm() {
+        if (this.swarmTimer > 10000) { this.swarmTimer = 0; } // Reset if timer gets too high
         this.swarmTimer += 16; // Assuming 60fps
-        if (this.swarmTimer >= this.swarmSpawnRate) {
+        if (this.swarmTimer >= this.swarmRate) {
             this.swarmTimer = 0;
             return true;
         }
