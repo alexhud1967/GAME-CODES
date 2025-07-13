@@ -26,6 +26,7 @@ class SpaceShooter {
         // Audio system
         this.sounds = {
             background: new Audio('assets/sounds/background.wav'),
+            bossbattle: new Audio('assets/sounds/bossbattle.m4a'),
             enemyHit: new Audio('assets/sounds/enemy-hit.wav'),
             explosion: new Audio('assets/sounds/explosion.wav'),
             juggernauthit: new Audio('assets/sounds/juggernaut-hit.wav'),
@@ -513,6 +514,11 @@ class SpaceShooter {
                         this.currentBoss = null;
                         this.bossActive = false;
                         
+                        // Stop boss music and resume background music
+                        this.sounds.bossbattle.pause();
+                        this.sounds.background.currentTime = 0;
+                        this.sounds.background.play().catch(e => console.log('Background music resume failed:', e));
+                        
                         // Spawn multiple powerups as reward
                         for (let k = 0; k < 3; k++) {
                             setTimeout(() => {
@@ -683,6 +689,13 @@ class SpaceShooter {
             this.bossActive = true;
             // Clear regular enemies when boss spawns
             this.enemies = [];
+            
+            // Start boss battle music
+            this.sounds.background.pause();
+            this.sounds.bossbattle.currentTime = 0;
+            this.sounds.bossbattle.loop = true;
+            this.sounds.bossbattle.volume = 0.7;
+            this.sounds.bossbattle.play().catch(e => console.log('Boss music play failed:', e));
         }
     }
     
