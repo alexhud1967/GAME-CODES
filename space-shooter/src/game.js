@@ -42,7 +42,7 @@ class SpaceShooter {
         
         // Configure audio
         this.sounds.background.loop = true;
-        this.sounds.background.volume = 0.3;
+        this.sounds.background.volume = 0.2; // Softer background music
         this.sounds.enemyHit.volume = 0.6;
         this.sounds.explosion.volume = 0.7;
         this.sounds.juggernauthit.volume = 0.8;
@@ -138,7 +138,10 @@ class SpaceShooter {
         }
         
         if (targetVolume === null) {
-            targetVolume = this.musicVolume * this.masterVolume;
+            // Boss music is louder than regular music
+            targetVolume = audio === this.sounds.bossbattle ? 
+                this.musicVolume * this.masterVolume * 1.3 : 
+                this.musicVolume * this.masterVolume;
         }
         
         audio.volume = 0;
@@ -171,7 +174,11 @@ class SpaceShooter {
             } else {
                 console.log('Boss music not ready, playing immediately');
                 if (toAudio) {
-                    toAudio.volume = this.musicVolume * this.masterVolume;
+                    // Boss music is louder than regular music
+                    const bossVolume = toAudio === this.sounds.bossbattle ? 
+                        this.musicVolume * this.masterVolume * 1.3 : 
+                        this.musicVolume * this.masterVolume;
+                    toAudio.volume = bossVolume;
                     toAudio.play().catch(e => console.log('Boss music play failed:', e));
                 }
             }
@@ -210,7 +217,7 @@ class SpaceShooter {
     updateAllVolumes() {
         // Update music volumes
         this.sounds.background.volume = this.musicVolume * this.masterVolume;
-        this.sounds.bossbattle.volume = this.musicVolume * this.masterVolume;
+        this.sounds.bossbattle.volume = this.musicVolume * this.masterVolume * 1.3; // Boss music louder
         
         // SFX volumes are updated when played via playSound method
     }
@@ -405,7 +412,7 @@ class SpaceShooter {
                     
                     // Safety check to prevent division by zero
                     if (distance > 0) {
-                        const speed = 3;
+                        const speed = 4 + (this.currentBoss.level * 0.5); // Faster boss bullets
                         this.enemyBullets.push(new EnemyBullet(
                             pos.x, pos.y,
                             (dx / distance) * speed,
@@ -819,7 +826,7 @@ class SpaceShooter {
             
             // Epic music transition - crossfade to boss music
             this.sounds.bossbattle.loop = true;
-            this.crossfade(this.sounds.background, this.sounds.bossbattle, 2000);
+            this.crossfade(this.sounds.background, this.sounds.bossbattle, 1000);
         }
     }
     
@@ -1392,12 +1399,12 @@ class Boss {
         this.y = y;
         this.level = level;
         this.radius = 80 + (level * 5); // Grows with level
-        this.speed = 1;
+        this.speed = 1.5 + (level * 0.2); // Faster movement, scales with level
         this.direction = 1;
-        this.health = 100 + (level * 50); // Scaling health
+        this.health = 120 + (level * 60); // More health, harder to kill
         this.maxHealth = this.health;
         this.fireTimer = 0;
-        this.fireRate = 200; // Faster firing
+        this.fireRate = 150 - (level * 10); // Much faster firing, gets faster each level
         this.rotation = 0;
         this.cannonRotation = 0;
         this.cannons = Math.min(6, 2 + Math.floor(level / 3)); // More cannons per level
@@ -1416,8 +1423,8 @@ class Boss {
             this.direction *= -1;
         }
         
-        // Rotate cannons continuously
-        this.cannonRotation += 0.03 * (deltaTime / 16);
+        // Rotate cannons continuously - faster and more aggressive
+        this.cannonRotation += (0.05 + this.level * 0.01) * (deltaTime / 16);
         
         // Keep boss on screen
         this.x = Math.max(this.radius, Math.min(800 - this.radius, this.x));
