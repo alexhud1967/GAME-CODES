@@ -55,6 +55,8 @@ class SpaceShooter {
         this.bulletHellTimer = 0;
         this.bulletHellActive = false;
         this.bulletHellDuration = 0;
+        this.shockwaveActive = false;
+        this.shockwaves = [];
         
         // Initialize
         this.initStarfield();
@@ -126,7 +128,15 @@ class SpaceShooter {
     
     spawnEnemy() {
         const x = Math.random() * (this.width - 40);
-        const type = Math.random() < 0.7 ? 'zigzag' : 'straight';
+        const rand = Math.random();
+        let type;
+        
+        if (rand < 0.3) type = 'zigzag';
+        else if (rand < 0.5) type = 'straight';
+        else if (rand < 0.7) type = 'fast';
+        else if (rand < 0.85) type = 'heavy';
+        else type = 'spiral';
+        
         this.enemies.push(new Enemy(x, -30, type));
     }
     
@@ -139,6 +149,31 @@ class SpaceShooter {
         this.bulletHellActive = true;
         this.bulletHellDuration = 5000; // 5 seconds of bullet hell
         this.bulletHellTimer = 0;
+        
+        // Clear all existing enemies (nuke effect)
+        this.enemies.forEach(enemy => {
+            this.createExplosion(enemy.x, enemy.y);
+        });
+        this.enemies = [];
+        this.playSound('explosion');
+    }
+    
+    activateShockwave(x, y) {
+        this.shockwaveActive = true;
+        this.shockwaves = [];
+        
+        // Create multiple expanding shockwave rings
+        for (let i = 0; i < 5; i++) {
+            this.shockwaves.push({
+                x: x,
+                y: y,
+                radius: i * 30,
+                maxRadius: 400 + i * 50,
+                speed: 3 + i * 0.5,
+                thickness: 15,
+                active: true
+            });
+        }
         
         // Clear all existing enemies (nuke effect)
         this.enemies.forEach(enemy => {
@@ -164,6 +199,9 @@ class SpaceShooter {
         // Keep player in bounds
         this.player.x = Math.max(20, Math.min(this.width - 20, this.player.x));
         this.player.y = Math.max(20, Math.min(this.height - 20, this.player.y));
+        
+        // Update player (for flame animation)
+        this.player.update(deltaTime);
         
         // Auto-fire (no sound)
         this.fireTimer += deltaTime;
@@ -220,6 +258,26 @@ class SpaceShooter {
             if (this.bulletHellTimer > this.bulletHellDuration) {
                 this.bulletHellActive = false;
                 this.bulletHellBullets = [];
+            }
+        }
+        
+        // Shockwave system
+        if (this.shockwaveActive) {
+            let activeShockwaves = 0;
+            this.shockwaves.forEach(shockwave => {
+                if (shockwave.active) {
+                    shockwave.radius += shockwave.speed * (deltaTime / 16);
+                    if (shockwave.radius > shockwave.maxRadius) {
+                        shockwave.active = false;
+                    } else {
+                        activeShockwaves++;
+                    }
+                }
+            });
+            
+            if (activeShockwaves === 0) {
+                this.shockwaveActive = false;
+                this.shockwaves = [];
             }
         }
         
@@ -287,17 +345,17 @@ class SpaceShooter {
                     
                     // Handle juggernaut hits
                     if (enemy.type === 'juggernaut') {
-                        enemy.health--;
+                        const hitResult = enemy.takeDamage();
                         this.playSound('juggernauthit');
                         this.createExplosion(enemy.x, enemy.y);
                         
-                        if (enemy.health <= 0) {
-                            // Juggernaut death - activate bullet hell
+                        if (hitResult === 'destroyed') {
+                            // Juggernaut death - activate shockwave
                             this.createExplosion(enemy.x, enemy.y);
                             this.playSound('explosion');
-                            this.activateBulletHell();
+                            this.activateShockwave(enemy.x, enemy.y);
                             this.enemies.splice(j, 1);
-                            this.score += 1000; // Big points for juggernaut
+                            this.score += 2000; // Big points for juggernaut
                         }
                     } else {
                         // Regular enemy death
@@ -342,6 +400,25 @@ class SpaceShooter {
                 this.lives--;
             }
         }
+        
+        // Player vs Shockwave collisions
+        if (this.shockwaveActive) {
+            this.shockwaves.forEach(shockwave => {
+                if (shockwave.active) {
+                    const dx = this.player.x - shockwave.x;
+                    const dy = this.player.y - shockwave.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Check if player is within shockwave ring
+                    if (distance > shockwave.radius - shockwave.thickness/2 && 
+                        distance < shockwave.radius + shockwave.thickness/2) {
+                        this.createExplosion(this.player.x, this.player.y);
+                        this.playSound('explosion');
+                        this.lives--;
+                    }
+                }
+            });
+        }
     }
     
     isColliding(obj1, obj2) {
@@ -385,6 +462,21 @@ class SpaceShooter {
             this.ctx.fill();
         });
         
+        // Draw shockwaves
+        if (this.shockwaveActive) {
+            this.shockwaves.forEach(shockwave => {
+                if (shockwave.active) {
+                    this.ctx.strokeStyle = '#00ffff';
+                    this.ctx.lineWidth = shockwave.thickness;
+                    this.ctx.globalAlpha = 0.8;
+                    this.ctx.beginPath();
+                    this.ctx.arc(shockwave.x, shockwave.y, shockwave.radius, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                    this.ctx.globalAlpha = 1.0;
+                }
+            });
+        }
+        
         // Game over screen
         if (!this.gameRunning) {
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -418,11 +510,71 @@ class Player {
         this.x = x;
         this.y = y;
         this.radius = 15;
+        this.flameTimer = 0;
+        this.flameParticles = [];
+    }
+    
+    update(deltaTime) {
+        this.flameTimer += deltaTime;
+        
+        // Create flame particles
+        if (this.flameTimer > 50) { // Every 50ms
+            for (let i = 0; i < 3; i++) {
+                this.flameParticles.push({
+                    x: (Math.random() - 0.5) * 8,
+                    y: 12 + Math.random() * 5,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: 2 + Math.random() * 3,
+                    life: 200 + Math.random() * 100,
+                    maxLife: 200 + Math.random() * 100,
+                    size: 2 + Math.random() * 3
+                });
+            }
+            this.flameTimer = 0;
+        }
+        
+        // Update flame particles
+        this.flameParticles = this.flameParticles.filter(particle => {
+            particle.x += particle.vx * (deltaTime / 16);
+            particle.y += particle.vy * (deltaTime / 16);
+            particle.life -= deltaTime;
+            return particle.life > 0;
+        });
     }
     
     render(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
+        
+        // Draw animated flame particles
+        this.flameParticles.forEach(particle => {
+            const alpha = particle.life / particle.maxLife;
+            const hue = 60 - (alpha * 60); // Yellow to red
+            ctx.fillStyle = `hsla(${hue}, 100%, 50%, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.size * alpha, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        // Draw main engine flames (dynamic)
+        const flameLength = 15 + Math.sin(Date.now() * 0.01) * 5;
+        const flameWidth = 8 + Math.sin(Date.now() * 0.02) * 2;
+        
+        ctx.fillStyle = '#ff6600';
+        ctx.beginPath();
+        ctx.moveTo(-flameWidth/2, 10);
+        ctx.lineTo(0, 10 + flameLength);
+        ctx.lineTo(flameWidth/2, 10);
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.moveTo(-flameWidth/3, 10);
+        ctx.lineTo(0, 10 + flameLength * 0.7);
+        ctx.lineTo(flameWidth/3, 10);
+        ctx.closePath();
+        ctx.fill();
         
         // Draw ship
         ctx.fillStyle = '#00ff00';
@@ -431,15 +583,6 @@ class Player {
         ctx.lineTo(-10, 10);
         ctx.lineTo(0, 5);
         ctx.lineTo(10, 10);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Engine glow
-        ctx.fillStyle = '#ffff00';
-        ctx.beginPath();
-        ctx.moveTo(-5, 10);
-        ctx.lineTo(0, 20);
-        ctx.lineTo(5, 10);
         ctx.closePath();
         ctx.fill();
         
@@ -476,12 +619,28 @@ class Enemy {
         this.type = type;
         this.zigzagTimer = 0;
         this.zigzagDirection = 1;
+        this.spiralAngle = 0;
+        this.throb = 0;
         
         // Set properties based on type
         if (type === 'juggernaut') {
-            this.radius = 30;
-            this.speed = 0.5;
-            this.health = 10;
+            this.radius = 40;
+            this.speed = 0.3;
+            this.rings = [5, 5, 5, 5, 5]; // 5 rings, each with 5 health
+            this.coreHealth = 20;
+            this.coreExposed = false;
+        } else if (type === 'fast') {
+            this.radius = 8;
+            this.speed = 4;
+            this.health = 1;
+        } else if (type === 'heavy') {
+            this.radius = 18;
+            this.speed = 1;
+            this.health = 3;
+        } else if (type === 'spiral') {
+            this.radius = 10;
+            this.speed = 2;
+            this.health = 1;
         } else {
             this.radius = 12;
             this.speed = 2;
@@ -489,12 +648,52 @@ class Enemy {
         }
     }
     
+    takeDamage() {
+        if (this.type === 'juggernaut') {
+            // Check if any rings are still active
+            let ringDestroyed = false;
+            for (let i = 0; i < this.rings.length; i++) {
+                if (this.rings[i] > 0) {
+                    this.rings[i]--;
+                    if (this.rings[i] === 0) {
+                        ringDestroyed = true;
+                    }
+                    return 'ring_hit';
+                }
+            }
+            
+            // All rings destroyed, hit core
+            if (!this.coreExposed) {
+                this.coreExposed = true;
+            }
+            
+            this.coreHealth--;
+            if (this.coreHealth <= 0) {
+                return 'destroyed';
+            }
+            return 'core_hit';
+        } else if (this.type === 'heavy') {
+            this.health--;
+            return this.health <= 0 ? 'destroyed' : 'hit';
+        } else {
+            return 'destroyed';
+        }
+    }
+    
     update(deltaTime) {
-        this.y += this.speed * (deltaTime / 16);
-        
-        if (this.type === 'zigzag') {
+        if (this.type === 'juggernaut') {
+            this.y += this.speed * (deltaTime / 16);
+            this.throb += deltaTime * 0.01;
+            
+            // Shake effect when core is exposed
+            if (this.coreExposed) {
+                this.x += (Math.random() - 0.5) * 2;
+                this.y += (Math.random() - 0.5) * 2;
+            }
+        } else if (this.type === 'zigzag') {
+            this.y += this.speed * (deltaTime / 16);
             this.zigzagTimer += deltaTime;
-            if (this.zigzagTimer > 500) { // Change direction every 500ms
+            if (this.zigzagTimer > 500) {
                 this.zigzagDirection *= -1;
                 this.zigzagTimer = 0;
             }
@@ -509,6 +708,21 @@ class Enemy {
                 this.x = 780;
                 this.zigzagDirection = -1;
             }
+        } else if (this.type === 'spiral') {
+            this.y += this.speed * (deltaTime / 16);
+            this.spiralAngle += deltaTime * 0.005;
+            this.x += Math.sin(this.spiralAngle) * 2;
+        } else if (this.type === 'fast') {
+            this.y += this.speed * (deltaTime / 16);
+            // Fast enemies move in slight curves
+            this.x += Math.sin(this.y * 0.01) * 0.5;
+        } else if (this.type === 'heavy') {
+            this.y += this.speed * (deltaTime / 16);
+            // Heavy enemies move straight but wobble slightly
+            this.x += Math.sin(Date.now() * 0.002) * 0.3;
+        } else {
+            // Straight movement
+            this.y += this.speed * (deltaTime / 16);
         }
     }
     
@@ -517,32 +731,124 @@ class Enemy {
         ctx.translate(this.x, this.y);
         
         if (this.type === 'juggernaut') {
-            // Draw massive juggernaut
-            ctx.fillStyle = '#8800ff';
-            ctx.strokeStyle = '#ff00ff';
-            ctx.lineWidth = 3;
+            // Draw 5 protective rings
+            for (let i = 0; i < this.rings.length; i++) {
+                if (this.rings[i] > 0) {
+                    const ringRadius = 15 + (i * 8);
+                    const alpha = this.rings[i] / 5; // Fade as ring takes damage
+                    
+                    ctx.strokeStyle = `rgba(136, 0, 255, ${alpha})`;
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Ring health indicators
+                    ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
+                    for (let j = 0; j < this.rings[i]; j++) {
+                        const angle = (j / 5) * Math.PI * 2;
+                        const x = Math.cos(angle) * ringRadius;
+                        const y = Math.sin(angle) * ringRadius;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
             
-            // Main body
-            ctx.fillRect(-25, -20, 50, 40);
-            ctx.strokeRect(-25, -20, 50, 40);
+            // Draw core (grows and throbs when exposed)
+            if (this.coreExposed) {
+                const coreSize = 12 + Math.sin(this.throb) * 4; // Throbbing effect
+                const healthPercent = this.coreHealth / 20;
+                
+                // Core glow
+                ctx.fillStyle = `rgba(255, 0, 0, 0.3)`;
+                ctx.beginPath();
+                ctx.arc(0, 0, coreSize + 5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Main core
+                ctx.fillStyle = healthPercent > 0.5 ? '#ffff00' : '#ff0000';
+                ctx.beginPath();
+                ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Core health bar
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(-15, -25, 30, 3);
+                ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : '#ff0000';
+                ctx.fillRect(-15, -25, 30 * healthPercent, 3);
+            } else {
+                // Hidden core
+                ctx.fillStyle = '#4400aa';
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        } else if (this.type === 'fast') {
+            // Fast enemy - small and bright
+            ctx.fillStyle = '#00ffff';
+            ctx.beginPath();
+            ctx.moveTo(0, 8);
+            ctx.lineTo(-6, -6);
+            ctx.lineTo(0, -3);
+            ctx.lineTo(6, -6);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Speed trails
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.moveTo(0, 8);
+            ctx.lineTo(-4, 15);
+            ctx.lineTo(0, 12);
+            ctx.lineTo(4, 15);
+            ctx.closePath();
+            ctx.fill();
+        } else if (this.type === 'heavy') {
+            // Heavy enemy - large and armored
+            ctx.fillStyle = '#ff8800';
+            ctx.fillRect(-12, -10, 24, 20);
+            ctx.strokeStyle = '#ffaa44';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-12, -10, 24, 20);
+            
+            // Armor plating
+            ctx.fillStyle = '#ffaa44';
+            ctx.fillRect(-8, -6, 16, 3);
+            ctx.fillRect(-8, 0, 16, 3);
+            ctx.fillRect(-8, 6, 16, 3);
             
             // Health indicator
-            const healthPercent = this.health / 10;
-            ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : '#ff0000';
-            ctx.fillRect(-20, -25, 40 * healthPercent, 3);
+            const healthPercent = this.health / 3;
+            ctx.fillStyle = healthPercent > 0.66 ? '#00ff00' : healthPercent > 0.33 ? '#ffff00' : '#ff0000';
+            ctx.fillRect(-10, -15, 20 * healthPercent, 2);
+        } else if (this.type === 'spiral') {
+            // Spiral enemy - spinning design
+            ctx.rotate(this.spiralAngle);
+            ctx.fillStyle = '#ff00ff';
             
-            // Weapons
-            ctx.fillStyle = '#ff4444';
-            ctx.fillRect(-30, -5, 10, 3);
-            ctx.fillRect(20, -5, 10, 3);
+            // Spiral arms
+            for (let i = 0; i < 3; i++) {
+                ctx.save();
+                ctx.rotate((i / 3) * Math.PI * 2);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, -12);
+                ctx.lineTo(3, -8);
+                ctx.lineTo(-3, -8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
             
-            // Core
-            ctx.fillStyle = '#ffff00';
+            // Center
+            ctx.fillStyle = '#ffffff';
             ctx.beginPath();
-            ctx.arc(0, 0, 8, 0, Math.PI * 2);
+            ctx.arc(0, 0, 3, 0, Math.PI * 2);
             ctx.fill();
         } else {
-            // Draw regular enemy ship
+            // Regular enemy ship
             ctx.fillStyle = '#ff0000';
             ctx.beginPath();
             ctx.moveTo(0, 12);
