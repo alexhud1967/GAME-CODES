@@ -11,6 +11,28 @@ class SpaceShooter {
         this.lives = 3;
         this.gameRunning = true;
         
+        // Audio system
+        this.sounds = {
+            background: new Audio('assets/sounds/background.wav'),
+            enemyHit: new Audio('assets/sounds/enemy-hit.wav'),
+            explosion: new Audio('assets/sounds/explosion.wav'),
+            juggernauthit: new Audio('assets/sounds/juggernaut-hit.wav'),
+            powerup: new Audio('assets/sounds/powerup.wav'),
+            shoot: new Audio('assets/sounds/shoot.wav')
+        };
+        
+        // Configure audio
+        this.sounds.background.loop = true;
+        this.sounds.background.volume = 0.3;
+        this.sounds.enemyHit.volume = 0.6;
+        this.sounds.explosion.volume = 0.7;
+        this.sounds.juggernauthit.volume = 0.8;
+        this.sounds.powerup.volume = 0.5;
+        this.sounds.shoot.volume = 0.4;
+        
+        // Game started flag
+        this.gameStarted = false;
+        
         // Mouse position
         this.mouseX = this.width / 2;
         this.mouseY = this.height - 100;
@@ -33,6 +55,22 @@ class SpaceShooter {
         this.gameLoop();
     }
     
+    playSound(soundName) {
+        try {
+            const sound = this.sounds[soundName];
+            if (sound) {
+                // Reset sound to beginning for rapid-fire sounds
+                sound.currentTime = 0;
+                sound.play().catch(e => {
+                    // Handle autoplay restrictions gracefully
+                    console.log(`Audio autoplay blocked for ${soundName}`);
+                });
+            }
+        } catch (error) {
+            console.log(`Error playing sound ${soundName}:`, error);
+        }
+    }
+    
     initStarfield() {
         for (let i = 0; i < 100; i++) {
             this.stars.push(new Star(
@@ -49,6 +87,17 @@ class SpaceShooter {
             this.mouseX = e.clientX - rect.left;
             this.mouseY = e.clientY - rect.top;
         });
+        
+        // Start button event listener
+        document.getElementById('startButton').addEventListener('click', () => {
+            this.startGame();
+        });
+    }
+    
+    startGame() {
+        this.gameStarted = true;
+        document.getElementById('startScreen').style.display = 'none';
+        this.playSound('background');
     }
     
     spawnEnemy() {
@@ -58,7 +107,7 @@ class SpaceShooter {
     }
     
     update(deltaTime) {
-        if (!this.gameRunning) return;
+        if (!this.gameRunning || !this.gameStarted) return;
         
         // Update player position to follow mouse
         this.player.x = this.mouseX;
@@ -72,6 +121,7 @@ class SpaceShooter {
         this.fireTimer += deltaTime;
         if (this.fireTimer > 150) { // Fire every 150ms
             this.bullets.push(new Bullet(this.player.x, this.player.y - 20, -8));
+            this.playSound('shoot');
             this.fireTimer = 0;
         }
         
@@ -131,6 +181,9 @@ class SpaceShooter {
                     // Create explosion particles
                     this.createExplosion(this.enemies[j].x, this.enemies[j].y);
                     
+                    // Play hit sound
+                    this.playSound('enemyHit');
+                    
                     // Remove bullet and enemy
                     this.bullets.splice(i, 1);
                     this.enemies.splice(j, 1);
@@ -146,6 +199,7 @@ class SpaceShooter {
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             if (this.isColliding(this.player, this.enemies[i])) {
                 this.createExplosion(this.player.x, this.player.y);
+                this.playSound('explosion');
                 this.enemies.splice(i, 1);
                 this.lives--;
             }
@@ -375,4 +429,3 @@ class Particle {
 window.addEventListener('load', () => {
     new SpaceShooter();
 });
-

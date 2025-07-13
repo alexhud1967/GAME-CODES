@@ -44,6 +44,35 @@
             font-size: 14px;
             color: #888;
         }
+        
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 17, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+        }
+        
+        #startButton {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 24px;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        #startButton:hover {
+            background: #00cc00;
+        }
     </style>
 </head>
 <body>
@@ -56,9 +85,13 @@
         <div id="instructions">
             Move mouse to control ship • Auto-fire enabled • Destroy enemies before they reach the bottom!
         </div>
+        <div id="startScreen">
+            <h1 style="color: #00ff00; font-size: 48px; margin: 0;">SPACE SHOOTER</h1>
+            <p style="color: #fff; font-size: 18px; margin: 20px 0;">Click to start and enable audio</p>
+            <button id="startButton">START GAME</button>
+        </div>
     </div>
     
     <script src="src/game.js"></script>
 </body>
 </html>
-
