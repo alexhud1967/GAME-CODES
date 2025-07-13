@@ -88,16 +88,26 @@ class SpaceShooter {
             this.mouseY = e.clientY - rect.top;
         });
         
-        // Start button event listener
-        document.getElementById('startButton').addEventListener('click', () => {
-            this.startGame();
-        });
+        // Start button event listener - wait for DOM to be ready
+        setTimeout(() => {
+            const startButton = document.getElementById('startButton');
+            if (startButton) {
+                startButton.addEventListener('click', () => {
+                    this.startGame();
+                });
+            }
+        }, 100);
     }
     
     startGame() {
+        console.log('Starting game...');
         this.gameStarted = true;
-        document.getElementById('startScreen').style.display = 'none';
+        const startScreen = document.getElementById('startScreen');
+        if (startScreen) {
+            startScreen.style.display = 'none';
+        }
         this.playSound('background');
+        console.log('Game started, gameStarted:', this.gameStarted);
     }
     
     spawnEnemy() {
@@ -107,7 +117,13 @@ class SpaceShooter {
     }
     
     update(deltaTime) {
-        if (!this.gameRunning || !this.gameStarted) return;
+        if (!this.gameRunning || !this.gameStarted) {
+            // Only log once every 60 frames to avoid spam
+            if (Math.random() < 0.016) {
+                console.log('Game not updating - gameRunning:', this.gameRunning, 'gameStarted:', this.gameStarted);
+            }
+            return;
+        }
         
         // Update player position to follow mouse
         this.player.x = this.mouseX;
