@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Blaster V2 - Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: white;
+            font-family: 'Courier New', monospace;
+        }
+        
+        #gameContainer {
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        canvas {
+            border: 2px solid #00ff00;
+            background: #000;
+        }
+        
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 20px;
+        }
+        
+        button:hover {
+            background: #00cc00;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <h1>Space Blaster V2 - Test Version</h1>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div>
+            <button onclick="testGame()">Test Start Game</button>
+            <button onclick="checkConsole()">Check Console</button>
+        </div>
+        <div id="status">Ready to test...</div>
+    </div>
+    
+    <script>
+        let game = null;
+        
+        function testGame() {
+            const status = document.getElementById('status');
+            try {
+                status.innerHTML = 'Creating game instance...';
+                game = new SpaceShooter();
+                status.innerHTML = 'Game created! Attempting to start...';
+                
+                setTimeout(() => {
+                    if (game && game.startGame) {
+                        game.startGame();
+                        status.innerHTML = 'Game started successfully!';
+                    } else {
+                        status.innerHTML = 'ERROR: Game or startGame method not found!';
+                    }
+                }, 500);
+                
+            } catch (error) {
+                status.innerHTML = 'ERROR: ' + error.message;
+                console.error('Game creation error:', error);
+            }
+        }
+        
+        function checkConsole() {
+            const status = document.getElementById('status');
+            status.innerHTML = 'Check browser console (F12) for any errors...';
+        }
+        
+        // Load the game script
+        const script = document.createElement('script');
+        script.src = 'src/game.js?v=1';
+        script.onload = () => {
+            document.getElementById('status').innerHTML = 'Game script loaded. Ready to test!';
+        };
+        script.onerror = () => {
+            document.getElementById('status').innerHTML = 'ERROR: Failed to load game script!';
+        };
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>
+
